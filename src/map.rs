@@ -5,24 +5,33 @@ use bevy::prelude::*;
 
 static HEIGHTMAP_BYTES: &[u8] = include_bytes!("assets/europe_heightmap.png");
 
-pub struct HeightmapSampler {
-    image: DynamicImage
+pub struct MapGenerator {
+    heightmap: DynamicImage,
+    resolution: u32,
 }
 
-impl HeightmapSampler {
+impl MapGenerator {
     pub fn new() -> Self {
         let image = image::load_from_memory(HEIGHTMAP_BYTES).unwrap();
-        HeightmapSampler {
-            image
+        MapGenerator {
+            heightmap: image,
+            resolution: 256,
         }
     }
 
     #[inline]
     pub fn sample(&self, x: i32, z: i32) -> f32 {
-        let x = i32::max(0, x) as u32;
-        let z = i32::max(0, z) as u32;
-        let red = self.image.get_pixel(x, z)[0] as f32;
-        red / 255.0 * 40.0 // 6400m is the max altitude
+        let (img_width, img_height) = self.heightmap.dimensions();
+
+        let img_x = i32::max(0, ((x as f32 / self.resolution as f32 * img_width as f32) as i32) - 1) as u32;
+        let img_z = i32::max(0, ((z as f32 / self.resolution as f32 * img_height as f32) as i32) - 1) as u32;
+
+        let mut red = self.heightmap.get_pixel(img_x, img_z)[0];
+        if red > 0 {
+            red += 2; // TODO for visibility of land w/o colour
+        }
+
+        red as f32 / 255.0 * 20.0
     }
 
     #[inline]
@@ -31,7 +40,7 @@ impl HeightmapSampler {
     }
 
     pub fn create_mesh(&self) -> Mesh {
-        let res: u32 = 256;
+        let res = self.resolution;
         let res_sq = res * res;
         let mut positions = Vec::with_capacity(res_sq as usize);
         let mut normals = Vec::with_capacity(res_sq as usize);
@@ -39,11 +48,11 @@ impl HeightmapSampler {
 
         for z in 0..res as i32 {
             for x in 0..res as i32 {
-                let top_left = self.sample_alps(x - 1, z - 1);
-                let top_right = self.sample_alps(x + 1, z - 1);
-                let bottom_left = self.sample_alps(x - 1, z + 1);
-                let bottom_right = self.sample_alps(x + 1, z + 1);
-                let y = self.sample_alps(x, z);
+                let top_left = self.sample(x - 1, z - 1);
+                let top_right = self.sample(x + 1, z - 1);
+                let bottom_left = self.sample(x - 1, z + 1);
+                let bottom_right = self.sample(x + 1, z + 1);
+                let y = self.sample(x, z);
 
                 let x = x as f32;
                 let z = z as f32;

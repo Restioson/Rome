@@ -4,10 +4,7 @@ use bevy::{
 };
 use bevy::window::WindowId;
 
-// const KEY_PAN_SPEED: f32 = 500.0;
-// const KEY_ZOOM_SPEED: f32 = 200.0;
 const MOUSE_PAN_SPEED: f32 = 20.0;
-// const MOUSE_ZOOM_SPEED: f32 = 1000.0;
 const MOUSE_PAN_MARGINS: f32 = 5.0;
 
 #[derive(Default)]

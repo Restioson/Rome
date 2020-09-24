@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use bevy::window::WindowMode;
-use crate::map::HeightmapSampler;
+use crate::map::MapGenerator;
 
 mod map;
 mod rts_camera;
@@ -19,7 +19,6 @@ fn main() {
         .add_default_plugins()
         .add_startup_system(setup.system())
         .add_system(rts_camera_system.system())
-        // .add_plugin(bevy_fly_camera::FlyCameraPlugin)
         .run();
 }
 
@@ -29,7 +28,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
 
-    let sampler = HeightmapSampler::new();
+    let sampler = MapGenerator::new();
     let mesh = meshes.add(sampler.create_mesh());
 
     commands
@@ -52,5 +51,4 @@ fn setup(
             ..Default::default()
         })
         .with(rts_camera::State::default());
-        // .with(bevy_fly_camera::FlyCamera::default());
 }
