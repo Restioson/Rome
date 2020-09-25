@@ -41,8 +41,7 @@ fn setup(
         });
     }
 
-    // let italy = Vec3::new(511.8971, 0.0, 316.40378);
-    let italy = Vec3::new(0.0, 0.0, 0.0);
+    let italy = Vec3::new(552.0, 0.0, 377.26);
     let angle = std::f32::consts::PI / 4.0;
     let camera_state = rts_camera::State::new_looking_at_zoomed_out(italy, angle, 180.0);
     let camera_transform = camera_state.camera_transform();

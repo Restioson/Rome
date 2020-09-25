@@ -30,8 +30,6 @@ impl MapGenerator {
         let x_tiles = img_width / self.chunk_size / scale;
         let z_tiles = img_height / self.chunk_size / scale;
 
-        println!("{}x{}", x_tiles, z_tiles);
-
         let mut handles = Vec::with_capacity((x_tiles * z_tiles) as usize);
         for x in 0..x_tiles {
             for z in 0..z_tiles {
@@ -41,7 +39,10 @@ impl MapGenerator {
                     resolution: self.resolution as i32,
                     side_length: self.chunk_size as i32,
                     scale,
-                    top_left_px: ((x * self.chunk_size * scale) as i32, (z * self.chunk_size * scale) as i32),
+                    top_left_px: (
+                        (x * self.chunk_size * scale) as i32,
+                        (z * self.chunk_size * scale) as i32,
+                    ),
                 };
 
                 let coords = (top_left.0 * self.chunk_size, top_left.1 * self.chunk_size);
@@ -76,13 +77,12 @@ impl Debug for MeshGenerator<'_> {
 impl MeshGenerator<'_> {
     #[inline]
     pub fn sample(&self, x: i32, z: i32) -> f32 {
-        // return 0.0;
-        // TODO
-
         let dim = self.heightmap.dimensions();
         let max = (dim.0 as i32 - 1, dim.1 as i32 - 1);
         let to_img = |n, top_left| {
-            let in_chunk = (n as f32 / self.resolution as f32 * self.side_length as f32 * self.scale as f32).floor();
+            let in_chunk =
+                (n as f32 / self.resolution as f32 * self.side_length as f32 * self.scale as f32)
+                    .floor();
             in_chunk as i32 + top_left
         };
         let img_x = i32::min(i32::max(0, to_img(x, self.top_left_px.0)), max.0);
@@ -90,10 +90,10 @@ impl MeshGenerator<'_> {
 
         let mut red = self.heightmap.get_pixel(img_x as u32, img_z as u32)[0];
         if red > 0 {
-            red += 10; // TODO for visibility of land w/o colour
+            red += 20; // TODO for visibility of land w/o colour
         }
 
-        red as f32 / 255.0 * 15.0
+        red as f32 / 255.0 * 5.0
     }
 
     pub fn create_mesh(&self) -> Mesh {
