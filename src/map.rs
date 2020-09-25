@@ -19,13 +19,14 @@ impl MapGenerator {
             heightmap: image,
             /// Must be one of 1, 2, 4, 5, 8, 10, 16, 20, 32, 40, 64, 80, 128, 160, 320, 640
             chunk_size: 64,
-            resolution: 160,
+            /// resolution <= 255
+            resolution: 255,
         }
     }
 
     pub fn generate_meshes(&self, meshes: &mut Assets<Mesh>) -> Vec<((u32, u32), Handle<Mesh>)> {
         let (img_width, img_height) = self.heightmap.dimensions();
-        let scale = 16;
+        let scale = 4;
         let x_tiles = img_width / self.chunk_size / scale;
         let z_tiles = img_height / self.chunk_size / scale;
 
@@ -101,6 +102,8 @@ impl MeshGenerator<'_> {
         let mut positions = Vec::with_capacity(res_plus_1_sq as usize);
         let mut normals = Vec::with_capacity(res_plus_1_sq as usize);
         let mut indices = Vec::with_capacity((res * res * 2 * 3) as usize);
+
+        assert!((res + 1) * (res + 1) <= 1 << 16, "Resolution too large!");
 
         for z in 0..res + 1 {
             for x in 0..res + 1 {
