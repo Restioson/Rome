@@ -1,15 +1,16 @@
 use bevy::input::mouse::MouseWheel;
 use bevy::{prelude::*, window::CursorMoved};
 
-const MOUSE_SCROLL_SPEED: f32 = 250.0;
+const ZOOM_SPEED: f32 = 200.0;
 const MOUSE_PAN_SPEED: f32 = 200.0;
 const MOUSE_PAN_MARGINS: f32 = 5.0;
 
 #[derive(Default)]
 pub struct State {
-    cursor_moved_event_reader: EventReader<CursorMoved>,
-    cursor_scroll_event_reader: EventReader<MouseWheel>,
-    pos: Vec2,
+    pub cursor_moved_event_reader: EventReader<CursorMoved>,
+    pub cursor_scroll_event_reader: EventReader<MouseWheel>,
+    pub pos: Vec2,
+    pub max_angle: Quat,
 }
 
 pub fn rts_camera_system(
@@ -46,12 +47,14 @@ pub fn rts_camera_system(
             translation.set_z(-1.0);
         }
 
+        let zoom_factor = f32::max(1.0, transform.scale().length() - 0.05);
+
         if let Some(y) = scroll {
-            let zoom = transform.rotation().mul_vec3(Vec3::new(0.0, -1.0, -2.0));
-            transform.translate(zoom * y * MOUSE_SCROLL_SPEED * time.delta_seconds);
+            let zoom = state.max_angle.mul_vec3(Vec3::new(0.0, -1.0, -2.0));
+            transform.translate(zoom * y * ZOOM_SPEED * time.delta_seconds);
+            // transform.rotate(Quat::from_rotation_x(2.0 * y * zoom_factor * time.delta_seconds));
         }
 
-        let zoom_factor = f32::max(1.0, transform.scale().length() - 0.05);
         let translation = translation * time.delta_seconds * MOUSE_PAN_SPEED / zoom_factor;
 
         // Apply movement to camera

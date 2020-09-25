@@ -44,7 +44,8 @@ fn setup(
     // Centred on italy
     let camera_translation = Vec3::new(translation.x() / 2.35, 128.0, translation.z() / 1.75);
     let camera_rotation = Quat::from_rotation_x(-45.0);
-    let camera_transform = Mat4::from_rotation_translation(camera_rotation, camera_translation);
+    let camera_mat4 = Mat4::from_rotation_translation(camera_rotation, camera_translation);
+    let camera_transform = Transform::new(camera_mat4);
 
     commands
         .spawn(LightComponents {
@@ -52,8 +53,11 @@ fn setup(
             ..Default::default()
         })
         .spawn(Camera3dComponents {
-            transform: Transform::new(camera_transform),
+            transform: camera_transform,
             ..Default::default()
         })
-        .with(rts_camera::State::default());
+        .with(rts_camera::State {
+            max_angle: camera_transform.rotation(),
+            ..Default::default()
+        });
 }

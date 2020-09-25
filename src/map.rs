@@ -114,15 +114,6 @@ impl MeshGenerator<'_> {
                 let bottom_left = x + (z + 1) * chunk;
                 let bottom_right = x + 1 + (z + 1) * chunk;
 
-                indices.push(top_left);
-                indices.push(top_right);
-                indices.push(bottom_left);
-
-                indices.push(top_right);
-                indices.push(bottom_right);
-                indices.push(bottom_left);
-
-                // Back faces
                 indices.push(bottom_left);
                 indices.push(top_right);
                 indices.push(top_left);
