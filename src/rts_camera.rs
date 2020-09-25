@@ -1,11 +1,8 @@
-use bevy::{
-    window::CursorMoved,
-    prelude::*,
-};
 use bevy::input::mouse::MouseWheel;
+use bevy::{prelude::*, window::CursorMoved};
 
-const MOUSE_SCROLL_SPEED: f32 = 20.0;
-const MOUSE_PAN_SPEED: f32 = 50.0;
+const MOUSE_SCROLL_SPEED: f32 = 250.0;
+const MOUSE_PAN_SPEED: f32 = 200.0;
 const MOUSE_PAN_MARGINS: f32 = 5.0;
 
 #[derive(Default)]
@@ -28,7 +25,10 @@ pub fn rts_camera_system(
             state.pos.set_y(event.position.y());
         }
 
-        let scroll = state.cursor_scroll_event_reader.latest(&cursor_scroll_events).map(|e| e.y);
+        let scroll = state
+            .cursor_scroll_event_reader
+            .latest(&cursor_scroll_events)
+            .map(|e| e.y);
         let window = windows.get_primary().unwrap();
 
         let mut translation = Vec3::new(0.0, 0.0, 0.0);
@@ -46,11 +46,15 @@ pub fn rts_camera_system(
             translation.set_z(-1.0);
         }
 
-        // if let Some(y) = scroll {
-        //     transform.apply_scale(MOUSE_SCROLL_SPEED * y * time.delta_seconds);
-        // }
+        if let Some(y) = scroll {
+            let zoom = transform.rotation().mul_vec3(Vec3::new(0.0, -1.0, -2.0));
+            transform.translate(zoom * y * MOUSE_SCROLL_SPEED * time.delta_seconds);
+        }
+
+        let zoom_factor = f32::max(1.0, transform.scale().length() - 0.05);
+        let translation = translation * time.delta_seconds * MOUSE_PAN_SPEED / zoom_factor;
 
         // Apply movement to camera
-        transform.translate(translation * time.delta_seconds * MOUSE_PAN_SPEED);
+        transform.translate(translation);
     }
 }

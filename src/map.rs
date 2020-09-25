@@ -1,7 +1,7 @@
-use image::{DynamicImage, GenericImageView};
+use bevy::prelude::*;
 use bevy::render::mesh::{Mesh, VertexAttribute};
 use bevy::render::pipeline::PrimitiveTopology;
-use bevy::prelude::*;
+use image::{DynamicImage, GenericImageView};
 
 static HEIGHTMAP_BYTES: &[u8] = include_bytes!("assets/europe_heightmap.png");
 
@@ -23,11 +23,13 @@ impl MapGenerator {
 
     pub fn generate_meshes(
         &self,
-        mut meshes: ResMut<Assets<Mesh>>
+        mut meshes: ResMut<Assets<Mesh>>,
     ) -> Vec<((u32, u32), Handle<Mesh>)> {
         let (img_width, img_height) = self.heightmap.dimensions();
-        let x_tiles = (img_width as f32 / self.chunk_size as f32 / self.resolution as f32).floor() as u32;
-        let z_tiles = (img_height as f32 / self.chunk_size as f32 / self.resolution as f32).floor() as u32;
+        let x_tiles =
+            (img_width as f32 / self.chunk_size as f32 / self.resolution as f32).floor() as u32;
+        let z_tiles =
+            (img_height as f32 / self.chunk_size as f32 / self.resolution as f32).floor() as u32;
 
         let mut handles = Vec::with_capacity((x_tiles * z_tiles) as usize);
         for x in 0..x_tiles {
@@ -96,16 +98,10 @@ impl MeshGenerator<'_> {
                 positions.push([x, y, z]);
 
                 // Normal
-                let normal_1 = Vec3::new(
-                    top_left - top_right,
-                    2.0,
-                    bottom_left - top_left,
-                ).normalize();
-                let normal_2 = Vec3::new(
-                    bottom_left - bottom_right,
-                    2.0,
-                    top_right - bottom_right,
-                ).normalize();
+                let normal_1 =
+                    Vec3::new(top_left - top_right, 2.0, bottom_left - top_left).normalize();
+                let normal_2 = Vec3::new(bottom_left - bottom_right, 2.0, top_right - bottom_right)
+                    .normalize();
                 let normal = (normal_1 + normal_2).normalize();
                 normals.push([normal.x(), normal.y(), normal.z()]);
             }
