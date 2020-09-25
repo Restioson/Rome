@@ -46,9 +46,9 @@ pub fn rts_camera_system(
             translation.set_z(-1.0);
         }
 
-        if let Some(y) = scroll {
-            transform.apply_scale(MOUSE_SCROLL_SPEED * y * time.delta_seconds);
-        }
+        // if let Some(y) = scroll {
+        //     transform.apply_scale(MOUSE_SCROLL_SPEED * y * time.delta_seconds);
+        // }
 
         // Apply movement to camera
         transform.translate(translation * time.delta_seconds * MOUSE_PAN_SPEED);
