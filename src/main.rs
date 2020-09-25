@@ -31,11 +31,12 @@ fn setup(
     let mesh_handles = generator.generate_meshes(&mut meshes);
 
     let mut translation = Vec3::new(0.0, 0.0, 0.0);
+    let material = materials.add(Color::rgb(0.5, 0.4, 0.3).into());
     for ((x, z), mesh) in mesh_handles {
         translation = Vec3::new(x as f32, 0.0, z as f32);
         commands.spawn(PbrComponents {
             mesh,
-            material: materials.add(Color::rgb(0.5, 0.4, 0.3).into()),
+            material,
             transform: Transform::from_translation(translation),
             ..Default::default()
         });
