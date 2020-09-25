@@ -19,7 +19,7 @@ impl MapGenerator {
             heightmap: image,
             /// Must be one of 1, 2, 4, 5, 8, 10, 16, 20, 32, 40, 64, 80, 128, 160, 320, 640
             chunk_size: 64,
-            resolution: 320,
+            resolution: 160,
         }
     }
 
@@ -75,6 +75,9 @@ impl Debug for MeshGenerator<'_> {
 impl MeshGenerator<'_> {
     #[inline]
     pub fn sample(&self, x: i32, z: i32) -> f32 {
+        // return 0.0;
+        // TODO
+
         let dim = self.heightmap.dimensions();
         let max = (dim.0 as i32 - 1, dim.1 as i32 - 1);
         let to_img = |n, top_left| {
@@ -125,10 +128,10 @@ impl MeshGenerator<'_> {
 
         for z in 0..res as u32 {
             for x in 0..res as u32 {
-                let top_left = x + z * res as u32;
-                let top_right = x + 1 + z * res as u32;
-                let bottom_left = x + (z + 1) * res as u32;
-                let bottom_right = x + 1 + (z + 1) * res as u32;
+                let top_left = x + z * (res + 1) as u32;
+                let top_right = x + 1 + z * (res + 1) as u32;
+                let bottom_left = x + (z + 1) * (res + 1) as u32;
+                let bottom_right = x + 1 + (z + 1) * (res + 1) as u32;
 
                 indices.push(bottom_left);
                 indices.push(top_right);
