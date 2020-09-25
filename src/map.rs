@@ -21,10 +21,7 @@ impl MapGenerator {
         }
     }
 
-    pub fn generate_meshes(
-        &self,
-        mut meshes: ResMut<Assets<Mesh>>,
-    ) -> Vec<((u32, u32), Handle<Mesh>)> {
+    pub fn generate_meshes(&self, meshes: &mut Assets<Mesh>) -> Vec<((u32, u32), Handle<Mesh>)> {
         let (img_width, img_height) = self.heightmap.dimensions();
         let x_tiles =
             (img_width as f32 / self.chunk_size as f32 / self.resolution as f32).floor() as u32;

@@ -25,10 +25,10 @@ fn main() {
 fn setup(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    meshes: ResMut<Assets<Mesh>>,
+    mut meshes: ResMut<Assets<Mesh>>,
 ) {
     let generator = MapGenerator::new();
-    let mesh_handles = generator.generate_meshes(meshes);
+    let mesh_handles = generator.generate_meshes(&mut meshes);
 
     let mut translation = Vec3::new(0.0, 0.0, 0.0);
     for ((x, z), mesh) in mesh_handles {
@@ -41,11 +41,11 @@ fn setup(
         });
     }
 
-    // Centred on italy
-    let camera_translation = Vec3::new(translation.x() / 2.35, 128.0, translation.z() / 1.75);
-    let camera_rotation = Quat::from_rotation_x(-45.0);
-    let camera_mat4 = Mat4::from_rotation_translation(camera_rotation, camera_translation);
-    let camera_transform = Transform::new(camera_mat4);
+    let italy = Vec3::new(translation.x() / 2.2, 0.0, translation.z() / 1.75);
+    // 45 degrees
+    let camera_state =
+        rts_camera::State::new_looking_at_zoomed_out(italy, std::f32::consts::PI / 4.0, 128.0);
+    let camera_transform = camera_state.camera_transform();
 
     commands
         .spawn(LightComponents {
@@ -56,8 +56,5 @@ fn setup(
             transform: camera_transform,
             ..Default::default()
         })
-        .with(rts_camera::State {
-            max_angle: camera_transform.rotation(),
-            ..Default::default()
-        });
+        .with(camera_state);
 }
