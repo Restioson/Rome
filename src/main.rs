@@ -25,29 +25,35 @@ fn main() {
 fn setup(
     mut commands: Commands,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut meshes: ResMut<Assets<Mesh>>,
+    meshes: ResMut<Assets<Mesh>>,
 ) {
+    let generator = MapGenerator::new();
+    let mesh_handles = generator.generate_meshes(meshes);
 
-    let sampler = MapGenerator::new();
-    let mesh = meshes.add(sampler.create_mesh());
+    let mut translation = Vec3::new(0.0, 0.0, 0.0);
+    for ((x, z), mesh) in mesh_handles {
+        translation = Vec3::new(x as f32, 0.0, z as f32);
+        commands
+            .spawn(PbrComponents {
+                mesh,
+                material: materials.add(Color::rgb(0.5, 0.4, 0.3).into()),
+                transform: Transform::from_translation(translation),
+                ..Default::default()
+            });
+    }
+
+    // Centred on italy
+    let camera_translation = Vec3::new(translation.x() / 2.35, 128.0, translation.z() / 1.75);
+    let camera_rotation = Quat::from_rotation_x(-45.0);
+    let camera_transform = Mat4::from_rotation_translation(camera_rotation, camera_translation);
 
     commands
-        .spawn(PbrComponents {
-            mesh,
-            material: materials.add(Color::rgb(0.5, 0.4, 0.3).into()),
-            transform: Transform::from_translation(Vec3::new(-1.5, 0.0, 0.0)),
-            ..Default::default()
-        })
         .spawn(LightComponents {
-            transform: Transform::from_translation(Vec3::new(0.0, 75.0, 256.0)),
+            transform: Transform::from_translation(Vec3::new(0.0, 128.0, translation.z() / 2.0)),
             ..Default::default()
         })
         .spawn(Camera3dComponents {
-            transform: Transform::new(Mat4::face_toward(
-                Vec3::new(128.0, 100.0, 256.0 + 64.0),
-                Vec3::new(128.0, 0.0, 128.0),
-                Vec3::new(0.0, 1.0, 0.0),
-            )),
+            transform: Transform::new(camera_transform),
             ..Default::default()
         })
         .with(rts_camera::State::default());

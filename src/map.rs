@@ -8,6 +8,7 @@ static HEIGHTMAP_BYTES: &[u8] = include_bytes!("assets/europe_heightmap.png");
 pub struct MapGenerator {
     heightmap: DynamicImage,
     resolution: u32,
+    chunk_size: u32,
 }
 
 impl MapGenerator {
@@ -15,39 +16,73 @@ impl MapGenerator {
         let image = image::load_from_memory(HEIGHTMAP_BYTES).unwrap();
         MapGenerator {
             heightmap: image,
-            resolution: 256,
+            chunk_size: 32,
+            resolution: 4,
         }
     }
 
+    pub fn generate_meshes(
+        &self,
+        mut meshes: ResMut<Assets<Mesh>>
+    ) -> Vec<((u32, u32), Handle<Mesh>)> {
+        let (img_width, img_height) = self.heightmap.dimensions();
+        let x_tiles = (img_width as f32 / self.chunk_size as f32 / self.resolution as f32).floor() as u32;
+        let z_tiles = (img_height as f32 / self.chunk_size as f32 / self.resolution as f32).floor() as u32;
+
+        let mut handles = Vec::with_capacity((x_tiles * z_tiles) as usize);
+        for x in 0..x_tiles {
+            for z in 0..z_tiles {
+                let top_left = (x * self.chunk_size, z * self.chunk_size);
+                let res = self.resolution;
+                let chunk = self.chunk_size;
+                let top_left_px = ((x * res * chunk) as i32, (z * res * chunk) as i32);
+                let generator = MeshGenerator {
+                    heightmap: &self.heightmap,
+                    resolution: self.resolution,
+                    chunk_size: self.chunk_size,
+                    top_left_px,
+                };
+
+                let mesh = generator.create_mesh();
+                let handle = meshes.add(mesh);
+                handles.push((top_left, handle));
+            }
+        }
+
+        handles
+    }
+}
+
+pub struct MeshGenerator<'a> {
+    heightmap: &'a DynamicImage,
+    chunk_size: u32,
+    resolution: u32,
+    top_left_px: (i32, i32),
+}
+
+impl MeshGenerator<'_> {
     #[inline]
     pub fn sample(&self, x: i32, z: i32) -> f32 {
-        let (img_width, img_height) = self.heightmap.dimensions();
+        let img_x = i32::max(0, x * self.resolution as i32 + self.top_left_px.0 - 1);
+        let img_z = i32::max(0, z * self.resolution as i32 + self.top_left_px.1 - 1);
 
-        let img_x = i32::max(0, ((x as f32 / self.resolution as f32 * img_width as f32) as i32) - 1) as u32;
-        let img_z = i32::max(0, ((z as f32 / self.resolution as f32 * img_height as f32) as i32) - 1) as u32;
-
-        let mut red = self.heightmap.get_pixel(img_x, img_z)[0];
+        let mut red = self.heightmap.get_pixel(img_x as u32, img_z as u32)[0];
         if red > 0 {
-            red += 2; // TODO for visibility of land w/o colour
+            red += 10; // TODO for visibility of land w/o colour
         }
 
-        red as f32 / 255.0 * 20.0
-    }
-
-    #[inline]
-    pub fn sample_alps(&self, x: i32, z: i32) -> f32 {
-        self.sample(x + 1893, z + 1251)
+        red as f32 / 255.0 * 15.0
     }
 
     pub fn create_mesh(&self) -> Mesh {
-        let res = self.resolution;
-        let res_sq = res * res;
-        let mut positions = Vec::with_capacity(res_sq as usize);
-        let mut normals = Vec::with_capacity(res_sq as usize);
-        let mut indices = Vec::with_capacity(((res - 1) * (res - 1) * 2 * 3) as usize);
+        let chunk = self.chunk_size;
+        let chunk_sq = chunk * chunk;
+        let mut positions = Vec::with_capacity(chunk_sq as usize);
+        let mut normals = Vec::with_capacity(chunk_sq as usize);
+        let mut indices = Vec::with_capacity(((chunk - 1) * (chunk - 1) * 2 * 3) as usize);
 
-        for z in 0..res as i32 {
-            for x in 0..res as i32 {
+        for z in 0..chunk as i32 {
+            for x in 0..chunk as i32 {
                 let top_left = self.sample(x - 1, z - 1);
                 let top_right = self.sample(x + 1, z - 1);
                 let bottom_left = self.sample(x - 1, z + 1);
@@ -76,12 +111,12 @@ impl MapGenerator {
             }
         }
 
-        for z in 0..res - 1 {
-            for x in 0..res - 1 {
-                let top_left = x + z * res;
-                let top_right = x + 1 + z * res;
-                let bottom_left = x + (z + 1) * res;
-                let bottom_right = x + 1 + (z + 1) * res;
+        for z in 0..chunk - 1 {
+            for x in 0..chunk - 1 {
+                let top_left = x + z * chunk;
+                let top_right = x + 1 + z * chunk;
+                let bottom_left = x + (z + 1) * chunk;
+                let bottom_right = x + 1 + (z + 1) * chunk;
 
                 indices.push(top_left);
                 indices.push(top_right);

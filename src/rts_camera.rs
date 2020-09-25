@@ -2,9 +2,8 @@ use bevy::{
     window::CursorMoved,
     prelude::*,
 };
-use bevy::window::WindowId;
 
-const MOUSE_PAN_SPEED: f32 = 20.0;
+const MOUSE_PAN_SPEED: f32 = 50.0;
 const MOUSE_PAN_MARGINS: f32 = 5.0;
 
 #[derive(Default)]
@@ -25,7 +24,7 @@ pub fn rts_camera_system(
             state.pos.set_y(event.position.y());
         }
 
-        let window = windows.get(WindowId::primary()).unwrap();
+        let window = windows.get_primary().unwrap();
 
         let mut translation = Vec3::new(0.0, 0.0, 0.0);
 
