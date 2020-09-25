@@ -1,4 +1,4 @@
-use crate::map::MapGenerator;
+use crate::map::mesh::MapGenerator;
 use bevy::prelude::*;
 use bevy::window::WindowMode;
 
