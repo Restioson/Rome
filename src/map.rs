@@ -23,18 +23,16 @@ impl MapGenerator {
 
     pub fn generate_meshes(&self, meshes: &mut Assets<Mesh>) -> Vec<((u32, u32), Handle<Mesh>)> {
         let (img_width, img_height) = self.heightmap.dimensions();
-        let x_tiles =
-            (img_width as f32 / self.chunk_size as f32 / self.resolution as f32).floor() as u32;
-        let z_tiles =
-            (img_height as f32 / self.chunk_size as f32 / self.resolution as f32).floor() as u32;
+        let x_tiles = (img_width as f32 / self.chunk_size as f32).floor() as u32;
+        let z_tiles = (img_height as f32 / self.chunk_size as f32).floor() as u32;
 
         let mut handles = Vec::with_capacity((x_tiles * z_tiles) as usize);
         for x in 0..x_tiles {
             for z in 0..z_tiles {
                 let res = self.resolution;
                 let chunk = self.chunk_size;
-                let top_left = (x * chunk * res, z * chunk * res);
-                let top_left_px = ((x * res * chunk) as i32, (z * res * chunk) as i32);
+                let top_left = (x, z);
+                let top_left_px = ((x * chunk) as i32, (z * chunk) as i32);
                 let generator = MeshGenerator {
                     heightmap: &self.heightmap,
                     resolution: self.resolution as i32,
