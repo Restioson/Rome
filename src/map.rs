@@ -32,14 +32,14 @@ impl MapGenerator {
         let mut handles = Vec::with_capacity((x_tiles * z_tiles) as usize);
         for x in 0..x_tiles {
             for z in 0..z_tiles {
-                let top_left = (x * self.chunk_size, z * self.chunk_size);
+                let top_left = (x * (self.chunk_size - 1), z * (self.chunk_size - 1));
                 let res = self.resolution;
                 let chunk = self.chunk_size;
                 let top_left_px = ((x * res * chunk) as i32, (z * res * chunk) as i32);
                 let generator = MeshGenerator {
                     heightmap: &self.heightmap,
                     resolution: self.resolution,
-                    chunk_size: self.chunk_size,
+                    chunk_size: self.chunk_size + 1,
                     top_left_px,
                 };
 
