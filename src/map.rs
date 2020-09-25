@@ -16,8 +16,8 @@ impl MapGenerator {
         let image = image::load_from_memory(HEIGHTMAP_BYTES).unwrap();
         MapGenerator {
             heightmap: image,
-            chunk_size: 32,
-            resolution: 4,
+            chunk_size: 128,
+            resolution: 128,
         }
     }
 
@@ -31,14 +31,14 @@ impl MapGenerator {
         let mut handles = Vec::with_capacity((x_tiles * z_tiles) as usize);
         for x in 0..x_tiles {
             for z in 0..z_tiles {
-                let top_left = (x * (self.chunk_size - 1), z * (self.chunk_size - 1));
                 let res = self.resolution;
                 let chunk = self.chunk_size;
+                let top_left = (x * chunk * res, z * chunk * res);
                 let top_left_px = ((x * res * chunk) as i32, (z * res * chunk) as i32);
                 let generator = MeshGenerator {
                     heightmap: &self.heightmap,
-                    resolution: self.resolution,
-                    chunk_size: self.chunk_size + 1,
+                    resolution: self.resolution as i32,
+                    side_length: self.chunk_size as i32,
                     top_left_px,
                 };
 
@@ -54,16 +54,16 @@ impl MapGenerator {
 
 pub struct MeshGenerator<'a> {
     heightmap: &'a DynamicImage,
-    chunk_size: u32,
-    resolution: u32,
+    side_length: i32,
+    resolution: i32,
     top_left_px: (i32, i32),
 }
 
 impl MeshGenerator<'_> {
     #[inline]
     pub fn sample(&self, x: i32, z: i32) -> f32 {
-        let img_x = i32::max(0, x * self.resolution as i32 + self.top_left_px.0 - 1);
-        let img_z = i32::max(0, z * self.resolution as i32 + self.top_left_px.1 - 1);
+        let img_x = i32::max(0, x / self.resolution * self.side_length + self.top_left_px.0 - 1);
+        let img_z = i32::max(0, z / self.resolution  * self.side_length + self.top_left_px.1 - 1);
 
         let mut red = self.heightmap.get_pixel(img_x as u32, img_z as u32)[0];
         if red > 0 {
@@ -74,14 +74,14 @@ impl MeshGenerator<'_> {
     }
 
     pub fn create_mesh(&self) -> Mesh {
-        let chunk = self.chunk_size;
-        let chunk_sq = chunk * chunk;
-        let mut positions = Vec::with_capacity(chunk_sq as usize);
-        let mut normals = Vec::with_capacity(chunk_sq as usize);
-        let mut indices = Vec::with_capacity(((chunk - 1) * (chunk - 1) * 2 * 3) as usize);
+        let res = self.resolution;
+        let res_plus_1_sq = (res + 1) * (res + 1);
+        let mut positions = Vec::with_capacity(res_plus_1_sq as usize);
+        let mut normals = Vec::with_capacity(res_plus_1_sq as usize);
+        let mut indices = Vec::with_capacity((res * res * 2 * 3) as usize);
 
-        for z in 0..chunk as i32 {
-            for x in 0..chunk as i32 {
+        for z in 0..res + 1 {
+            for x in 0..res + 1 {
                 let top_left = self.sample(x - 1, z - 1);
                 let top_right = self.sample(x + 1, z - 1);
                 let bottom_left = self.sample(x - 1, z + 1);
@@ -104,12 +104,12 @@ impl MeshGenerator<'_> {
             }
         }
 
-        for z in 0..chunk - 1 {
-            for x in 0..chunk - 1 {
-                let top_left = x + z * chunk;
-                let top_right = x + 1 + z * chunk;
-                let bottom_left = x + (z + 1) * chunk;
-                let bottom_right = x + 1 + (z + 1) * chunk;
+        for z in 0..res as u32 {
+            for x in 0..res as u32 {
+                let top_left = x + z * res as u32;
+                let top_right = x + 1 + z * res as u32;
+                let bottom_left = x + (z + 1) * res as u32;
+                let bottom_right = x + 1 + (z + 1) * res as u32;
 
                 indices.push(bottom_left);
                 indices.push(top_right);
