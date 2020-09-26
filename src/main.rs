@@ -113,8 +113,7 @@ fn setup(
 
     commands
         .spawn(LightComponents {
-            // TODO fix
-            transform: Transform::from_translation(Vec3::new(0.0, 128.0, 0.0)),
+            transform: Transform::from_translation(Vec3::new(0.0, 180.0, 437.0)),
             ..Default::default()
         })
         .spawn(Camera3dComponents {
