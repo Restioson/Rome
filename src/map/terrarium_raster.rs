@@ -110,7 +110,7 @@ impl Raster {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum RasterFormat {
     UByte(Vec<u8>),
     Byte(Vec<i8>),
@@ -156,7 +156,7 @@ impl RasterFormat {
     }
 }
 
-
+#[derive(Debug)]
 enum RasterFilter {
     None,
     Left,

@@ -4,6 +4,7 @@ use bevy::render::pipeline::PrimitiveTopology;
 use std::fmt::{self, Debug, Formatter};
 use crate::map::terrarium_raster::Raster;
 use crate::HeightMap;
+use bevy::render::mesh;
 
 
 pub struct MapGenerator {
@@ -136,12 +137,12 @@ impl ChunkGenerator<'_> {
             }
         }
 
-        for z in 0..res as u32 {
-            for x in 0..res as u32 {
-                let top_left = x + z * (res + 1) as u32;
-                let top_right = x + 1 + z * (res + 1) as u32;
-                let bottom_left = x + (z + 1) * (res + 1) as u32;
-                let bottom_right = x + 1 + (z + 1) * (res + 1) as u32;
+        for z in 0..res as u16 {
+            for x in 0..res as u16 {
+                let top_left = x + z * (res + 1) as u16;
+                let top_right = x + 1 + z * (res + 1) as u16;
+                let bottom_left = x + (z + 1) * (res + 1) as u16;
+                let bottom_right = x + 1 + (z + 1) * (res + 1) as u16;
 
                 indices.push(bottom_left);
                 indices.push(top_right);
@@ -160,7 +161,7 @@ impl ChunkGenerator<'_> {
                 VertexAttribute::normal(normals),
                 VertexAttribute::uv(uvs),
             ],
-            indices: Some(indices),
+            indices: Some(mesh::Indices::U16(indices)),
         }
     }
 }
