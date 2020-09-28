@@ -35,6 +35,7 @@ fn main() {
         .add_system(rts_camera_system.system())
         .add_system(spawn_meshes.system())
         .add_system(fps_counter_text_update.system())
+        .add_system(map::shader::update_time.system())
         .run();
 }
 
@@ -112,7 +113,8 @@ fn spawn_meshes(
                     transform: Transform::from_translation(translation),
                     ..Default::default()
                 })
-                .with(material);
+                .with(material)
+                .with(map::shader::TimeNode::default());
         }
     }
 }

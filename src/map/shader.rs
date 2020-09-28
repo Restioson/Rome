@@ -1,7 +1,7 @@
-use bevy::render::pipeline::{PipelineDescriptor, RenderPipeline, PipelineSpecialization, DynamicBinding};
+use bevy::render::pipeline::*;
 use bevy::render::shader::{ShaderStages, ShaderStage};
 use bevy::prelude::*;
-use bevy::render::render_graph::{AssetRenderResourcesNode, base, RenderGraph};
+use bevy::render::render_graph::*;
 use bevy::render::renderer::RenderResources;
 use once_cell::sync::OnceCell;
 
@@ -13,6 +13,11 @@ static PIPELINE: OnceCell<Handle<PipelineDescriptor>> = OnceCell::new();
 #[derive(RenderResources, Default)]
 pub struct MapMaterial {
     pub texture: Handle<Texture>,
+}
+
+#[derive(RenderResources, Default)]
+pub struct TimeNode {
+    time: f32,
 }
 
 pub fn setup(
@@ -34,7 +39,15 @@ pub fn setup(
         .add_node_edge("map_material", base::node::MAIN_PASS)
         .unwrap();
 
+    render_graph.add_system_node("time", RenderResourcesNode::<TimeNode>::new(true));
+
     PIPELINE.set(pipeline_handle).unwrap();
+}
+
+pub fn update_time(time: Res<Time>, mut nodes: Query<&mut TimeNode>) {
+    for mut node in &mut nodes.iter() {
+        node.time = time.seconds_since_startup as f32;
+    }
 }
 
 pub fn render_pipelines() -> RenderPipelines {
@@ -53,6 +66,11 @@ pub fn render_pipelines() -> RenderPipelines {
                     bind_group: 1,
                     binding: 1,
                 },
+                // Time_time
+                DynamicBinding {
+                    bind_group: 2,
+                    binding: 1,
+                }
             ],
             ..Default::default()
         },
