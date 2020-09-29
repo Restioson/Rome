@@ -36,12 +36,12 @@ impl MapGenerator {
                 let top_left = (self.chunk_size * x + offset.0, self.chunk_size * z + offset.1);
                 let generator = ChunkGenerator {
                     heightmap: &heightmap.raster,
-                    resolution: self.resolution as i32,
-                    side_length: self.chunk_size as i32,
+                    resolution: self.resolution,
+                    side_length: self.chunk_size,
                     scale,
                     top_left_px: (
-                        (x * self.chunk_size * scale) as i32,
-                        (z * self.chunk_size * scale) as i32,
+                        x * self.chunk_size * scale,
+                        z * self.chunk_size * scale,
                     ),
                 };
 
@@ -57,10 +57,10 @@ impl MapGenerator {
 
 pub struct ChunkGenerator<'a> {
     heightmap: &'a Raster,
-    side_length: i32,
-    resolution: i32,
+    side_length: u32,
+    resolution: u32,
     scale: u32,
-    top_left_px: (i32, i32),
+    top_left_px: (u32, u32),
 }
 
 impl Debug for ChunkGenerator<'_> {
@@ -81,7 +81,7 @@ impl ChunkGenerator<'_> {
             let in_chunk =
                 (n as f32 / self.resolution as f32 * self.side_length as f32 * self.scale as f32)
                     .floor();
-            in_chunk as i32 + top_left
+            in_chunk as i32 + top_left as i32
         };
         let img_x = i32::min(i32::max(0, to_img(x, self.top_left_px.0)), max.0);
         let img_z = i32::min(i32::max(0, to_img(z, self.top_left_px.1)), max.1);
@@ -100,12 +100,10 @@ impl ChunkGenerator<'_> {
         let mut positions = Vec::with_capacity(res_plus_1_sq as usize);
         let mut normals = Vec::with_capacity(res_plus_1_sq as usize);
         let mut uvs = Vec::with_capacity(res_plus_1_sq as usize);
-        let mut indices = Vec::with_capacity((res * res * 2 * 3) as usize);
-
-        assert!((res + 1) * (res + 1) <= 1 << 16, "Resolution too large!");
 
         for z in 0..res + 1 {
             for x in 0..res + 1 {
+                let (x, z) = (x as i32, z as i32);
                 let top_left = self.sample(x - 1, z - 1);
                 let top_right = self.sample(x + 1, z - 1);
                 let bottom_left = self.sample(x - 1, z + 1);
@@ -137,22 +135,11 @@ impl ChunkGenerator<'_> {
             }
         }
 
-        for z in 0..res as u16 {
-            for x in 0..res as u16 {
-                let top_left = x + z * (res + 1) as u16;
-                let top_right = x + 1 + z * (res + 1) as u16;
-                let bottom_left = x + (z + 1) * (res + 1) as u16;
-                let bottom_right = x + 1 + (z + 1) * (res + 1) as u16;
-
-                indices.push(bottom_left);
-                indices.push(top_right);
-                indices.push(top_left);
-
-                indices.push(bottom_left);
-                indices.push(bottom_right);
-                indices.push(top_right);
-            }
-        }
+        let indices = if res_plus_1_sq >= 1 << 16 {
+            mesh::Indices::U32(create_indices::<u32>(res))
+        } else {
+            mesh::Indices::U16(create_indices::<u16>(res))
+        };
 
         Mesh {
             primitive_topology: PrimitiveTopology::TriangleList,
@@ -161,7 +148,45 @@ impl ChunkGenerator<'_> {
                 VertexAttribute::normal(normals),
                 VertexAttribute::uv(uvs),
             ],
-            indices: Some(mesh::Indices::U16(indices)),
+            indices: Some(indices),
         }
     }
+}
+
+trait Index {
+    fn from_u32(idx: u32) -> Self;
+}
+
+impl Index for u32 {
+    fn from_u32(idx: u32) -> u32 {
+        idx
+    }
+}
+
+impl Index for u16 {
+    fn from_u32(idx: u32) -> Self {
+        idx as u16
+    }
+}
+
+fn create_indices<I: Index>(res: u32) -> Vec<I> {
+    let mut indices = Vec::with_capacity(res as usize * res as usize * 6);
+    for z in 0..res {
+        for x in 0..res as u32 {
+            let top_left = x + z * (res + 1);
+            let top_right = x + 1 + z * (res + 1);
+            let bottom_left = x + (z + 1) * (res + 1);
+            let bottom_right = x + 1 + (z + 1) * (res + 1);
+
+            indices.push(I::from_u32(bottom_left));
+            indices.push(I::from_u32(top_right));
+            indices.push(I::from_u32(top_left));
+
+            indices.push(I::from_u32(bottom_left));
+            indices.push(I::from_u32(bottom_right));
+            indices.push(I::from_u32(top_right));
+        }
+    }
+
+    indices
 }

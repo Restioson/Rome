@@ -16,7 +16,7 @@ void main() {
     vec4 color;
 
     if (v_uvs[0] < 1.0) { // Land
-        color = texture(sampler2D(MapMaterial_texture, MapMaterial_texture_sampler), v_position.xy * 0.1);
+        color = texture(sampler2D(MapMaterial_texture, MapMaterial_texture_sampler), v_position.xy * 0.05);
     } else if (v_uvs[0] < 2.0) { // Beach
         color = vec4(1.0, 1.0, 0.0, 1.0);
     } else { // Ocean

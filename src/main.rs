@@ -32,10 +32,10 @@ fn main() {
         .add_startup_system(map::shader::setup.system())
         .add_startup_system(setup.system())
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
-        .add_system(rts_camera_system.system())
-        .add_system(spawn_meshes.system())
         .add_system(fps_counter_text_update.system())
+        .add_system(rts_camera_system.system())
         .add_system(map::shader::update_time.system())
+        .add_system(spawn_meshes.system())
         .run();
 }
 
@@ -70,21 +70,24 @@ fn fps_counter_text_update(diagnostics: Res<Diagnostics>, mut query: Query<&mut 
     for mut text in &mut query.iter() {
         if let Some(fps) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
             if let Some(average) = fps.average() {
-                text.value = format!("FPS: {:.0}", average.round());
+                text.value = format!("FPS: {:.0}", average.round()).into();
             }
         }
     }
 }
 
+struct MeshData {
+    texture: Handle<Texture>,
+}
+
 fn spawn_meshes(
     mut commands: Commands,
+    mesh_data: Res<MeshData>,
     generator: Res<MapGenerator>,
     mut heightmap_asset_events: ResMut<Events<AssetEvent<HeightMap>>>,
     heightmaps: Res<Assets<HeightMap>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<MapMaterial>>,
-    mut textures: ResMut<Assets<Texture>>,
-    asset_server: Res<AssetServer>
 ) {
     for event in heightmap_asset_events.drain() {
         let heightmap = match event {
@@ -92,9 +95,7 @@ fn spawn_meshes(
             _ => unimplemented!(),
         };
 
-        let handle = asset_server.load_sync(&mut textures, "assets/texture2.png").unwrap();
-        textures.get_mut(&handle).unwrap().address_mode = AddressMode::Repeat;
-        let material = MapMaterial { texture: handle };
+        let material = MapMaterial { texture: mesh_data.texture };
         let material = materials.add(material);
 
         let meshes = generator.generate_meshes(heightmap, &mut meshes);
@@ -121,6 +122,7 @@ fn spawn_meshes(
 
 fn setup(
     mut commands: Commands,
+    mut textures: ResMut<Assets<Texture>>,
     asset_server: Res<AssetServer>,
 ) {
     asset_server.load_asset_folder("assets/heightmap").unwrap();
@@ -131,7 +133,11 @@ fn setup(
     let camera_transform = camera_state.camera_transform();
     let font_handle = asset_server.load("assets/fonts/FiraSans-SemiBold.ttf").unwrap();
 
+    let texture = asset_server.load_sync(&mut textures, "assets/texture2.png").unwrap();
+    textures.get_mut(&texture).unwrap().address_mode = AddressMode::Repeat;
+
     commands
+        .insert_resource(MeshData { texture })
         .spawn(LightComponents {
             transform: Transform::from_translation(Vec3::new(0.0, 180.0, 437.0)),
             ..Default::default()
