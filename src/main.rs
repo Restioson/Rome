@@ -76,27 +76,19 @@ fn fps_counter_text_update(diagnostics: Res<Diagnostics>, mut query: Query<&mut 
     }
 }
 
-struct MeshData {
-    texture: Handle<Texture>,
-}
-
 fn spawn_meshes(
     mut commands: Commands,
-    mesh_data: Res<MeshData>,
+    map_material: Res<Handle<MapMaterial>>,
     generator: Res<MapGenerator>,
     mut heightmap_asset_events: ResMut<Events<AssetEvent<HeightMap>>>,
     heightmaps: Res<Assets<HeightMap>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<MapMaterial>>,
 ) {
     for event in heightmap_asset_events.drain() {
         let heightmap = match event {
             AssetEvent::Created { handle } => heightmaps.get(&handle).unwrap(),
             _ => unimplemented!(),
         };
-
-        let material = MapMaterial { texture: mesh_data.texture };
-        let material = materials.add(material);
 
         let meshes = generator.generate_meshes(heightmap, &mut meshes);
 
@@ -114,7 +106,7 @@ fn spawn_meshes(
                     transform: Transform::from_translation(translation),
                     ..Default::default()
                 })
-                .with(material)
+                .with(map_material.clone())
                 .with(map::shader::TimeNode::default());
         }
     }
@@ -123,6 +115,7 @@ fn spawn_meshes(
 fn setup(
     mut commands: Commands,
     mut textures: ResMut<Assets<Texture>>,
+    mut materials: ResMut<Assets<MapMaterial>>,
     asset_server: Res<AssetServer>,
 ) {
     asset_server.load_asset_folder("assets/map/heightmap").unwrap();
@@ -133,11 +126,17 @@ fn setup(
     let camera_transform = camera_state.camera_transform();
     let font_handle = asset_server.load("assets/fonts/FiraSans-SemiBold.ttf").unwrap();
 
-    let texture = asset_server.load_sync(&mut textures, "assets/map/textures/forest.png").unwrap();
-    textures.get_mut(&texture).unwrap().address_mode = AddressMode::Repeat;
+    let forest_texture = asset_server.load_sync(&mut textures, "assets/map/textures/forest2.png").unwrap();
+    textures.get_mut(&forest_texture).unwrap().address_mode = AddressMode::Repeat;
+
+    let beach_texture = asset_server.load_sync(&mut textures, "assets/map/textures/beach_sand.png").unwrap();
+    textures.get_mut(&beach_texture).unwrap().address_mode = AddressMode::Repeat;
+
+    let material = MapMaterial { forest_texture, beach_texture };
+    let material = materials.add(material);
 
     commands
-        .insert_resource(MeshData { texture })
+        .insert_resource(material)
         .spawn(LightComponents {
             transform: Transform::from_translation(Vec3::new(0.0, 180.0, 437.0)),
             ..Default::default()

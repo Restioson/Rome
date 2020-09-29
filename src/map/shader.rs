@@ -12,7 +12,8 @@ static PIPELINE: OnceCell<Handle<PipelineDescriptor>> = OnceCell::new();
 
 #[derive(RenderResources, Default)]
 pub struct MapMaterial {
-    pub texture: Handle<Texture>,
+    pub forest_texture: Handle<Texture>,
+    pub beach_texture: Handle<Texture>,
 }
 
 #[derive(RenderResources, Default)]
