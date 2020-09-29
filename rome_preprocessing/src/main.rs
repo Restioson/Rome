@@ -6,7 +6,7 @@ use geo::{LineString, Coordinate, Polygon};
 fn main() {
     let shapes = shapefile::read("data/water_polygons.shp").unwrap();
 
-    shapes
+    let count = shapes
         .into_par_iter()
         .filter_map(|shape| {
             match shape {
@@ -27,6 +27,8 @@ fn main() {
             Polygon::new(outer_ring, inner_rings)
         })
         .count();
+
+    println!("{}", count);
 }
 
 fn shapefile_to_geo_ring(ring: PolygonRing<Point>) -> LineString<f64> {

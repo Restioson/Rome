@@ -125,7 +125,7 @@ fn setup(
     mut textures: ResMut<Assets<Texture>>,
     asset_server: Res<AssetServer>,
 ) {
-    asset_server.load_asset_folder("assets/heightmap").unwrap();
+    asset_server.load_asset_folder("assets/map/heightmap").unwrap();
     asset_server.watch_for_changes().unwrap();
     let italy = Vec3::new(413.0, 0.0, 437.0);
     let angle = std::f32::consts::PI / 4.0;
@@ -133,7 +133,7 @@ fn setup(
     let camera_transform = camera_state.camera_transform();
     let font_handle = asset_server.load("assets/fonts/FiraSans-SemiBold.ttf").unwrap();
 
-    let texture = asset_server.load_sync(&mut textures, "assets/texture2.png").unwrap();
+    let texture = asset_server.load_sync(&mut textures, "assets/map/textures/forest.png").unwrap();
     textures.get_mut(&texture).unwrap().address_mode = AddressMode::Repeat;
 
     commands
