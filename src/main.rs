@@ -8,12 +8,10 @@ mod rts_camera;
 use rts_camera::rts_camera_system;
 use bevy::asset::AssetLoader;
 use std::path::Path;
-use crate::map::terrarium_raster::Raster;
-use regex::Regex;
 use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, Diagnostics};
-use once_cell::sync::Lazy;
 use crate::map::shader::MapMaterial;
 use bevy::render::texture::AddressMode;
+use std::io::Read;
 
 fn main() {
     App::build()
@@ -24,7 +22,6 @@ fn main() {
             mode: WindowMode::BorderlessFullscreen,
             ..Default::default()
         })
-        .add_resource(MapGenerator::new())
         .add_default_plugins()
         .add_asset::<HeightMap>()
         .add_asset_loader::<HeightMap, HeightMapLoader>()
@@ -35,34 +32,31 @@ fn main() {
         .add_system(fps_counter_text_update.system())
         .add_system(rts_camera_system.system())
         .add_system(map::shader::update_time.system())
-        .add_system(spawn_meshes.system())
         .run();
 }
 
-pub struct HeightMap {
-    grid_pos: (u32, u32),
-    raster: Raster,
-}
+pub struct HeightMap(rome_map::Map);
 
 #[derive(Default)]
 struct HeightMapLoader;
 
 impl AssetLoader<HeightMap> for HeightMapLoader {
-    fn from_bytes(&self, path: &Path, bytes: Vec<u8>) -> Result<HeightMap, anyhow::Error> {
-        static RE: Lazy<Regex> = Lazy::new(|| Regex::new("([0-9]+)x([0-9]+)\\.heightmap").unwrap());
+    fn from_bytes(&self, _path: &Path, bytes: Vec<u8>) -> Result<HeightMap, anyhow::Error> {
+        println!("Unzipping");
 
-        let filename = path.file_name().unwrap().to_str().unwrap();
-        let captures = RE.captures(filename).unwrap();
-        let get_coord = |idx| captures.get(idx + 1usize).unwrap().as_str().parse::<u32>().unwrap();
+        let mut decoder = zstd::Decoder::new(&*bytes).unwrap();
+        let mut unzipped = Vec::new();
+        decoder.read_to_end(&mut unzipped).unwrap();
 
-        Ok(HeightMap {
-            grid_pos: (get_coord(0), get_coord(1)),
-            raster: map::terrarium_raster::read(&*bytes).unwrap(),
-        })
+        println!("Deserializing");
+        let map: rome_map::Map = bincode::deserialize(&unzipped).unwrap();
+        println!("Done loading heightmap");
+
+        Ok(HeightMap(map))
     }
 
     fn extensions(&self) -> &[&str] {
-        &["heightmap"]
+        &["mapdat"]
     }
 }
 
@@ -76,55 +70,19 @@ fn fps_counter_text_update(diagnostics: Res<Diagnostics>, mut query: Query<&mut 
     }
 }
 
-fn spawn_meshes(
-    mut commands: Commands,
-    map_material: Res<Handle<MapMaterial>>,
-    generator: Res<MapGenerator>,
-    mut heightmap_asset_events: ResMut<Events<AssetEvent<HeightMap>>>,
-    heightmaps: Res<Assets<HeightMap>>,
-    mut meshes: ResMut<Assets<Mesh>>,
-) {
-    for event in heightmap_asset_events.drain() {
-        let heightmap = match event {
-            AssetEvent::Created { handle } => heightmaps.get(&handle).unwrap(),
-            _ => unimplemented!(),
-        };
-
-        let meshes = generator.generate_meshes(heightmap, &mut meshes);
-
-        for ((x, z), mesh) in meshes {
-            let translation = Vec3::new(
-                x as f32,
-                0.0,
-                z as f32
-            );
-
-            commands
-                .spawn(MeshComponents {
-                    mesh,
-                    render_pipelines: map::shader::render_pipelines(),
-                    transform: Transform::from_translation(translation),
-                    ..Default::default()
-                })
-                .with(map_material.clone())
-                .with(map::shader::TimeNode::default());
-        }
-    }
-}
-
 fn setup(
     mut commands: Commands,
     mut textures: ResMut<Assets<Texture>>,
     mut materials: ResMut<Assets<MapMaterial>>,
+    mut heightmap: ResMut<Assets<HeightMap>>,
+    mut meshes: ResMut<Assets<Mesh>>,
     asset_server: Res<AssetServer>,
 ) {
-    asset_server.load_asset_folder("assets/map/heightmap").unwrap();
-    asset_server.watch_for_changes().unwrap();
-    let italy = Vec3::new(413.0, 0.0, 437.0);
-    let angle = std::f32::consts::PI / 4.0;
-    let camera_state = rts_camera::State::new_looking_at_zoomed_out(italy, angle, 180.0);
-    let camera_transform = camera_state.camera_transform();
-    let font_handle = asset_server.load("assets/fonts/FiraSans-SemiBold.ttf").unwrap();
+    let map_handle = asset_server.load_sync(&mut heightmap, "assets/map/heightmap/map.mapdat").unwrap();
+    let map = heightmap.get(&map_handle).unwrap();
+
+    let generator = MapGenerator::new();
+    let meshes = generator.generate_meshes(&map.0, &mut meshes);
 
     let forest_texture = asset_server.load_sync(&mut textures, "assets/map/textures/forest2.png").unwrap();
     textures.get_mut(&forest_texture).unwrap().address_mode = AddressMode::Repeat;
@@ -132,11 +90,31 @@ fn setup(
     let beach_texture = asset_server.load_sync(&mut textures, "assets/map/textures/beach_sand.png").unwrap();
     textures.get_mut(&beach_texture).unwrap().address_mode = AddressMode::Repeat;
 
-    let material = MapMaterial { forest_texture, beach_texture };
-    let material = materials.add(material);
+    let map_material = MapMaterial { forest_texture, beach_texture };
+    let map_material = materials.add(map_material);
+
+    for ((x, z), mesh) in meshes {
+        let translation = Vec3::new(x as f32, 0.0, z as f32);
+
+        commands
+            .spawn(MeshComponents {
+                mesh,
+                render_pipelines: map::shader::render_pipelines(),
+                transform: Transform::from_translation(translation),
+                ..Default::default()
+            })
+            .with(map_material.clone())
+            .with(map::shader::TimeNode::default());
+    }
+
+    asset_server.watch_for_changes().unwrap();
+    let italy = Vec3::new(599.0, 0.0, 440.0);
+    let angle = std::f32::consts::PI / 4.0;
+    let camera_state = rts_camera::State::new_looking_at_zoomed_out(italy, angle, 180.0);
+    let camera_transform = camera_state.camera_transform();
+    let font_handle = asset_server.load("assets/fonts/FiraSans-SemiBold.ttf").unwrap();
 
     commands
-        .insert_resource(material)
         .spawn(LightComponents {
             transform: Transform::from_translation(Vec3::new(0.0, 180.0, 437.0)),
             ..Default::default()

@@ -2,10 +2,9 @@ use bevy::prelude::*;
 use bevy::render::mesh::{Mesh, VertexAttribute};
 use bevy::render::pipeline::PrimitiveTopology;
 use std::fmt::{self, Debug, Formatter};
-use crate::map::terrarium_raster::Raster;
-use crate::HeightMap;
 use bevy::render::mesh;
-
+use itertools::Itertools;
+use rayon::prelude::*;
 
 pub struct MapGenerator {
     resolution: u32,
@@ -21,34 +20,33 @@ impl MapGenerator {
         }
     }
 
-    pub fn generate_meshes(&self, heightmap: &HeightMap, meshes: &mut Assets<Mesh>) -> Vec<((u32, u32), Handle<Mesh>)> {
+    pub fn generate_meshes(&self, map: &rome_map::Map, meshes: &mut Assets<Mesh>) -> Vec<((u32, u32), Handle<Mesh>)> {
         let mut handles = Vec::new();
 
-        let (img_width, img_height) = (heightmap.raster.width, heightmap.raster.height);
+        let (img_width, img_height) = (map.width, map.height);
         let scale = 10;
-        let x_tiles = img_width / self.chunk_size / scale;
-        let z_tiles = img_height / self.chunk_size / scale;
-        let grid_pos = heightmap.grid_pos;
-        let offset = (grid_pos.0 * self.chunk_size * x_tiles, grid_pos.1 * self.chunk_size * z_tiles);
+        let x_tiles = img_width as u32 / self.chunk_size / scale;
+        let z_tiles = img_height as u32 / self.chunk_size / scale;
 
-        for z in 0..z_tiles {
-            for x in 0..x_tiles {
-                let top_left = (self.chunk_size * x + offset.0, self.chunk_size * z + offset.1);
+        let generated: Vec<_> = (0..x_tiles)
+            .cartesian_product(0..z_tiles)
+            .par_bridge()
+            .map(|(x, z)| {
+                let top_left = (x * self.chunk_size, z * self.chunk_size);
                 let generator = ChunkGenerator {
-                    heightmap: &heightmap.raster,
+                    map: &map,
                     resolution: self.resolution,
                     side_length: self.chunk_size,
                     scale,
-                    top_left_px: (
-                        x * self.chunk_size * scale,
-                        z * self.chunk_size * scale,
-                    ),
+                    top_left_px: (top_left.0 * scale, top_left.1 * scale),
                 };
 
-                let mesh = generator.create_mesh();
-                let handle = meshes.add(mesh);
-                handles.push((top_left, handle));
-            }
+                (top_left, generator.create_mesh())
+            })
+            .collect();
+
+        for (coord, mesh) in generated {
+            handles.push((coord, meshes.add(mesh)));
         }
 
         handles
@@ -56,7 +54,7 @@ impl MapGenerator {
 }
 
 pub struct ChunkGenerator<'a> {
-    heightmap: &'a Raster,
+    map: &'a rome_map::Map,
     side_length: u32,
     resolution: u32,
     scale: u32,
@@ -73,25 +71,49 @@ impl Debug for ChunkGenerator<'_> {
     }
 }
 
+pub struct Pixel {
+    height: f32,
+    is_water: bool,
+}
+
 impl ChunkGenerator<'_> {
-    #[inline]
-    pub fn sample(&self, x: i32, z: i32) -> f32 {
-        let max = (self.heightmap.width as i32 - 1, self.heightmap.height as i32 - 1);
+    /// Sample an (x, z) on the raster directly, with no conversions or anti-aliasing
+    fn sample_raw(&self, x: i32, z: i32) -> rome_map::Pixel {
+        let max = (self.map.width as i32 - 1, self.map.height as i32 - 1);
+
+        let img_x = i32::min(i32::max(0, x), max.0);
+        let img_z = i32::min(i32::max(0, z), max.1);
+
+        self.map.get(img_x as u32, img_z as u32)
+    }
+
+    pub fn sample(&self, x: i32, z: i32) -> Pixel {
         let to_img = |n, top_left| {
             let in_chunk =
                 (n as f32 / self.resolution as f32 * self.side_length as f32 * self.scale as f32)
                     .floor();
             in_chunk as i32 + top_left as i32
         };
-        let img_x = i32::min(i32::max(0, to_img(x, self.top_left_px.0)), max.0);
-        let img_z = i32::min(i32::max(0, to_img(z, self.top_left_px.1)), max.1);
 
-        let mut height = self.heightmap.get(img_x as u32, img_z as u32);
-        if height > 0 {
-            height += 200; // For visibility of low-lying land
+        let (centre_x, centre_z) = (to_img(x, self.top_left_px.0), to_img(z, self.top_left_px.1));
+
+        let (mut total_height, mut total_is_water) = (0i32, 0u16);
+
+        for kernel_x in -2..=2 {
+            for kernel_z in -2..=2 {
+                let (x, z) = (centre_x + kernel_x, centre_z + kernel_z);
+                let raw_px = self.sample_raw(x, z);
+                total_height += raw_px.height.0 as i32;
+                if kernel_x.abs() < 2 && kernel_z.abs() < 2 {
+                    total_is_water += raw_px.is_water as u16;
+                }
+            }
         }
 
-        height as f32 / 750.0
+        Pixel {
+            height: f32::max(total_height as f32 / 25.0 / 750.0, 0.0),
+            is_water: total_is_water / 9 >= 1,
+        }
     }
 
     pub fn create_mesh(&self) -> Mesh {
@@ -108,27 +130,27 @@ impl ChunkGenerator<'_> {
                 let top_right = self.sample(x + 1, z - 1);
                 let bottom_left = self.sample(x - 1, z + 1);
                 let bottom_right = self.sample(x + 1, z + 1);
-                let y = self.sample(x, z);
+                let centre = self.sample(x, z);
 
                 let x = x as f32 / self.resolution as f32 * self.side_length as f32;
                 let z = z as f32 / self.resolution as f32 * self.side_length as f32;
 
                 // Position
-                positions.push([x, f32::max(y, 0.0), z]);
+                positions.push([x, centre.height, z]);
 
-                // UV
-                if y <= 0.0 && top_left <= 0.0 && top_right <= 0.0 && bottom_right <= 0.0{
+                // UV - not actually UVs, just using it to store this data...
+                if centre.is_water && top_left.is_water && top_right.is_water && bottom_right.is_water {
                     uvs.push([2.0, 0.0]) // Ocean
-                } else if y <= 0.0 {
+                } else if centre.is_water {
                     uvs.push([1.0, 0.0]) // Beach
                 } else {
                     uvs.push([0.0, 0.0]) // Land
                 }
 
                 // Normal
-                let normal_1 =
-                    Vec3::new(top_left - top_right, 2.0, bottom_left - top_left).normalize();
-                let normal_2 = Vec3::new(bottom_left - bottom_right, 2.0, top_right - bottom_right)
+                let normal_1 = Vec3::new(top_left.height - top_right.height , 2.0, bottom_left.height - top_left.height)
+                    .normalize();
+                let normal_2 = Vec3::new(bottom_left.height  - bottom_right.height, 2.0, top_right.height - bottom_right.height)
                     .normalize();
                 let normal = (normal_1 + normal_2).normalize();
                 normals.push([normal.x(), normal.y(), normal.z()]);
