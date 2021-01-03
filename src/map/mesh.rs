@@ -1,214 +1,198 @@
-use bevy::prelude::*;
-use bevy::render::mesh::{Mesh, VertexAttribute};
+use bevy::render::mesh::{Indices, Mesh};
 use bevy::render::pipeline::PrimitiveTopology;
-use std::fmt::{self, Debug, Formatter};
-use bevy::render::mesh;
-use itertools::Itertools;
-use rayon::prelude::*;
+use rand::Rng;
+use std::cmp;
+use std::collections::HashMap;
 
-pub struct MapGenerator {
-    resolution: u32,
-    pub chunk_size: u32,
+#[derive(Default)]
+struct MeshBuilder {
+    indexer: Indexer<u32>,
+    triangle_indices: Vec<u32>,
 }
 
-impl MapGenerator {
-    pub fn new() -> Self {
-        MapGenerator {
-            chunk_size: 50,
-            /// resolution <= 255
-            resolution: 150,
+impl MeshBuilder {
+    fn push_triangle(&mut self, points: [[f32; 3]; 3]) {
+        for point in &points {
+            self.triangle_indices.push(self.indexer.index(*point));
         }
     }
 
-    pub fn generate_meshes(&self, map: &rome_map::Map, meshes: &mut Assets<Mesh>) -> Vec<((u32, u32), Handle<Mesh>)> {
-        let mut handles = Vec::new();
-
-        let (img_width, img_height) = (map.width, map.height);
-        let scale = 10;
-        let x_tiles = img_width as u32 / self.chunk_size / scale;
-        let z_tiles = img_height as u32 / self.chunk_size / scale;
-
-        let generated: Vec<_> = (0..x_tiles)
-            .cartesian_product(0..z_tiles)
-            .par_bridge()
-            .map(|(x, z)| {
-                let top_left = (x * self.chunk_size, z * self.chunk_size);
-                let generator = ChunkGenerator {
-                    map: &map,
-                    resolution: self.resolution,
-                    side_length: self.chunk_size,
-                    scale,
-                    top_left_px: (top_left.0 * scale, top_left.1 * scale),
-                };
-
-                (top_left, generator.create_mesh())
-            })
-            .collect();
-
-        for (coord, mesh) in generated {
-            handles.push((coord, meshes.add(mesh)));
-        }
-
-        handles
+    fn build(self) -> Mesh {
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, self.indexer.into_positions());
+        mesh.set_indices(Some(Indices::U32(self.triangle_indices)));
+        dbg!(mesh.get_vertex_buffer_data().len());
+        mesh
     }
 }
 
-pub struct ChunkGenerator<'a> {
-    map: &'a rome_map::Map,
-    side_length: u32,
-    resolution: u32,
-    scale: u32,
-    top_left_px: (u32, u32),
-}
+// Adapted from https://github.com/morgan3d/misc/blob/master/terrain/Terrain.cpp
+#[rustfmt::skip]
+pub fn build_mesh(lod_levels: u8) -> Mesh {
+    let mut builder = MeshBuilder::default();
 
-impl Debug for ChunkGenerator<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MeshGenerator")
-            .field("side_length", &self.side_length)
-            .field("resolution", &self.resolution)
-            .field("top_left_px", &self.top_left_px)
-            .finish()
-    }
-}
+    // How many grid cells to use most-detailed LOD for, divided by two
+    let g = 128 / 2; // TODO ?
+    let pad = 1;
 
-pub struct Pixel {
-    height: f32,
-    is_water: bool,
-}
+    for lod_level in 0..lod_levels {
+        let step: usize = 1 << (lod_level as usize);
+        let half_step: isize = (step >> 1) as isize;
+        // Radius that the LOD takes up
+        let lod_radius: isize = step as isize * (g + pad);
 
-impl ChunkGenerator<'_> {
-    /// Sample an (x, z) on the raster directly, with no conversions or anti-aliasing
-    fn sample_raw(&self, x: i32, z: i32) -> rome_map::Pixel {
-        let max = (self.map.width as i32 - 1, self.map.height as i32 - 1);
+        for z in (-lod_radius..lod_radius).step_by(step) {
+            for x in (-lod_radius..lod_radius).step_by(step) {
+                // Don't draw inside of other LOD's areas
+                if cmp::max((x + half_step).abs(), (z + half_step).abs()) >= g * half_step {
+                    // Tessellate the square as such:
+                    //   A-----B-----C   ^     ^
+                    //   | \   |   / |   |   half-step
+                    //   |   \ | /   |         |
+                    //   D-----E-----F  step   v
+                    //   |   / | \   |
+                    //   | /   |   \ |   |
+                    //   G-----H-----I   v
+                    //   <-   step  ->
 
-        let img_x = i32::min(i32::max(0, x), max.0);
-        let img_z = i32::min(i32::max(0, z), max.1);
+                    let (x, z, _l, s) = (x as f32, z as f32, lod_level as f32, step as f32);
+                    let hs = s / 2.0; // half-step
 
-        self.map.get(img_x as u32, img_z as u32)
-    }
+                    // TODO
+                    let l = || rand::thread_rng().gen_range(0.0..1.0);
 
-    pub fn sample(&self, x: i32, z: i32) -> Pixel {
-        let to_img = |n, top_left| {
-            let in_chunk =
-                (n as f32 / self.resolution as f32 * self.side_length as f32 * self.scale as f32)
-                    .floor();
-            in_chunk as i32 + top_left as i32
-        };
+                    // y is set to LOD level (`l`) for use in the shader
+                    //        x        y   z
+                    let a = [ x,       l(),  z     ];
+                    let c = [ x + s,   l(),  z     ];
+                    let g = [ x,       l(),  z + s ];
+                    let i = [ x + s,   l(),  z + s ];
 
-        let (centre_x, centre_z) = (to_img(x, self.top_left_px.0), to_img(z, self.top_left_px.1));
+                    let b = [ x + hs,  l(),  z      ];
+                    let d = [ x,       l(),  z + hs ];
+                    let e = [ x + hs,  l(),  z + hs ];
+                    let f = [ x + s,   l(),  z + hs ];
+                    let h = [ x + hs,  l(),  z + s  ];
 
-        let (mut total_height, mut total_is_water) = (0i32, 0u16);
+                    let (x, z) = (x as isize, z as isize);
 
-        for kernel_x in -2..=2 {
-            for kernel_z in -2..=2 {
-                let (x, z) = (centre_x + kernel_x, centre_z + kernel_z);
-                let raw_px = self.sample_raw(x, z);
-                total_height += raw_px.height.0 as i32;
-                if kernel_x.abs() < 2 && kernel_z.abs() < 2 {
-                    total_is_water += raw_px.is_water as u16;
+                    // Stitch the border into the next level
+                    if x == -lod_radius {
+                        //   A-----B-----C
+                        //   | \   |   / |
+                        //   |   \ | /   |
+                        //   |     E-----F
+                        //   |   / | \   |
+                        //   | /   |   \ |
+                        //   G-----H-----I
+                        builder.push_triangle([e, a, g]);
+                    } else {
+                        builder.push_triangle([e, a, d]);
+                        builder.push_triangle([e, d, g]);
+                    }
+
+                    if z == lod_radius - 1 {
+                        builder.push_triangle([e, g, i]);
+                    } else {
+                        builder.push_triangle([e, g, h]);
+                        builder.push_triangle([e, h, i]);
+                    }
+
+                    if x == lod_radius - 1 {
+                        builder.push_triangle([e, i, c]);
+                    } else {
+                        builder.push_triangle([e, i, f]);
+                        builder.push_triangle([e, f, c]);
+                    }
+
+                    if z == -lod_radius {
+                        builder.push_triangle([e, c, a]);
+                    } else {
+                        builder.push_triangle([e, c, b]);
+                        builder.push_triangle([e, b, a]);
+                    }
                 }
             }
         }
 
-        Pixel {
-            height: f32::max(total_height as f32 / 25.0 / 750.0, 0.0),
-            is_water: total_is_water / 9 >= 1,
-        }
     }
 
-    pub fn create_mesh(&self) -> Mesh {
-        let res = self.resolution;
-        let res_plus_1_sq = (res + 1) * (res + 1);
-        let mut positions = Vec::with_capacity(res_plus_1_sq as usize);
-        let mut normals = Vec::with_capacity(res_plus_1_sq as usize);
-        let mut uvs = Vec::with_capacity(res_plus_1_sq as usize);
-
-        for z in 0..res + 1 {
-            for x in 0..res + 1 {
-                let (x, z) = (x as i32, z as i32);
-                let top_left = self.sample(x - 1, z - 1);
-                let top_right = self.sample(x + 1, z - 1);
-                let bottom_left = self.sample(x - 1, z + 1);
-                let bottom_right = self.sample(x + 1, z + 1);
-                let centre = self.sample(x, z);
-
-                let x = x as f32 / self.resolution as f32 * self.side_length as f32;
-                let z = z as f32 / self.resolution as f32 * self.side_length as f32;
-
-                // Position
-                positions.push([x, centre.height, z]);
-
-                // UV - not actually UVs, just using it to store this data...
-                if centre.is_water && top_left.is_water && top_right.is_water && bottom_right.is_water {
-                    uvs.push([2.0, 0.0]) // Ocean
-                } else if centre.is_water {
-                    uvs.push([1.0, 0.0]) // Beach
-                } else {
-                    uvs.push([0.0, 0.0]) // Land
-                }
-
-                // Normal
-                let normal_1 = Vec3::new(top_left.height - top_right.height , 2.0, bottom_left.height - top_left.height)
-                    .normalize();
-                let normal_2 = Vec3::new(bottom_left.height  - bottom_right.height, 2.0, top_right.height - bottom_right.height)
-                    .normalize();
-                let normal = (normal_1 + normal_2).normalize();
-                normals.push([normal.x(), normal.y(), normal.z()]);
-            }
-        }
-
-        let indices = if res_plus_1_sq >= 1 << 16 {
-            mesh::Indices::U32(create_indices::<u32>(res))
-        } else {
-            mesh::Indices::U16(create_indices::<u16>(res))
-        };
-
-        Mesh {
-            primitive_topology: PrimitiveTopology::TriangleList,
-            attributes: vec![
-                VertexAttribute::position(positions),
-                VertexAttribute::normal(normals),
-                VertexAttribute::uv(uvs),
-            ],
-            indices: Some(indices),
-        }
-    }
+    builder.build()
 }
 
-trait Index {
-    fn from_u32(idx: u32) -> Self;
+type HashF32 = ordered_float::OrderedFloat<f32>;
+
+fn hash_f32(f: f32) -> HashF32 {
+    ordered_float::OrderedFloat(f)
 }
 
-impl Index for u32 {
-    fn from_u32(idx: u32) -> u32 {
-        idx
-    }
+trait Index: Copy {
+    fn zero() -> Self;
+    fn increment(&mut self);
+    fn as_usize(&self) -> usize;
 }
 
 impl Index for u16 {
-    fn from_u32(idx: u32) -> Self {
-        idx as u16
+    fn zero() -> Self {
+        0
+    }
+
+    fn increment(&mut self) {
+        *self += 1;
+    }
+
+    fn as_usize(&self) -> usize {
+        *self as usize
     }
 }
 
-fn create_indices<I: Index>(res: u32) -> Vec<I> {
-    let mut indices = Vec::with_capacity(res as usize * res as usize * 6);
-    for z in 0..res {
-        for x in 0..res as u32 {
-            let top_left = x + z * (res + 1);
-            let top_right = x + 1 + z * (res + 1);
-            let bottom_left = x + (z + 1) * (res + 1);
-            let bottom_right = x + 1 + (z + 1) * (res + 1);
-
-            indices.push(I::from_u32(bottom_left));
-            indices.push(I::from_u32(top_right));
-            indices.push(I::from_u32(top_left));
-
-            indices.push(I::from_u32(bottom_left));
-            indices.push(I::from_u32(bottom_right));
-            indices.push(I::from_u32(top_right));
-        }
+impl Index for u32 {
+    fn zero() -> Self {
+        0
     }
 
-    indices
+    fn increment(&mut self) {
+        *self += 1;
+    }
+
+    fn as_usize(&self) -> usize {
+        *self as usize
+    }
+}
+
+struct Indexer<I: Index> {
+    hash: HashMap<[HashF32; 3], I>,
+    n: I,
+}
+
+impl<I: Index> Default for Indexer<I> {
+    fn default() -> Self {
+        Indexer {
+            hash: HashMap::new(),
+            n: I::zero(),
+        }
+    }
+}
+
+impl<I: Index> Indexer<I> {
+    fn index(&mut self, i: [f32; 3]) -> I {
+        let n = &mut self.n;
+        *self
+            .hash
+            .entry([hash_f32(i[0]), hash_f32(i[1]), hash_f32(i[2])])
+            .or_insert_with(|| {
+                let old = *n;
+                n.increment();
+                old
+            })
+    }
+
+    fn into_positions(self) -> Vec<[f32; 3]> {
+        let mut vec = vec![[0.0, 0.0, 0.0]; self.n.as_usize()];
+        for (pos, idx) in self.hash.into_iter() {
+            vec[idx.as_usize()] = [pos[0].0, pos[1].0, pos[2].0];
+        }
+
+        vec
+    }
 }

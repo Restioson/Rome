@@ -1,67 +1,60 @@
-use crate::map::mesh::MapGenerator;
 use bevy::prelude::*;
 use bevy::window::WindowMode;
+use bevy::diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin};
+use crate::map::shader::MapMaterial;
+use crate::loading::LoadRomeAssets;
+use crate::map::RomeMapPlugin;
+use crate::rts_camera::rts_camera_system;
+use bevy::prelude::shape::Cube;
+use crate::map::mesh::build_mesh;
+use bevy::render::camera::VisibleEntities;
 
+mod loading;
 mod map;
 mod rts_camera;
 
-use rts_camera::rts_camera_system;
-use bevy::asset::AssetLoader;
-use std::path::Path;
-use bevy::diagnostic::{FrameTimeDiagnosticsPlugin, Diagnostics};
-use crate::map::shader::MapMaterial;
-use bevy::render::texture::AddressMode;
-use std::io::Read;
+const STATE_STAGE: &'static str = "rome_app_state_stage";
 
 fn main() {
-    App::build()
+    let mut builder = App::build();
+
+    builder
         .add_resource(Msaa { samples: 8 })
         .add_resource(WindowDescriptor {
-            vsync: true,
+            vsync: false,
             resizable: false,
             mode: WindowMode::BorderlessFullscreen,
             ..Default::default()
         })
-        .add_default_plugins()
-        .add_asset::<HeightMap>()
-        .add_asset_loader::<HeightMap, HeightMapLoader>()
-        .add_asset::<MapMaterial>()
-        .add_startup_system(map::shader::setup.system())
-        .add_startup_system(setup.system())
+        .add_resource(State::new(AppState::Loading))
+        .add_stage_after(stage::UPDATE, STATE_STAGE, StateStage::<AppState>::default())
+        .add_plugins(DefaultPlugins)
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
-        .add_system(fps_counter_text_update.system())
-        .add_system(rts_camera_system.system())
-        .add_system(map::shader::update_time.system())
+        .add_plugin(LoadRomeAssets)
+        .add_plugin(RomeMapPlugin)
+        .on_state_enter(STATE_STAGE, AppState::InGame, start_game.system())
+        .on_state_update(
+            STATE_STAGE,
+            AppState::InGame,
+            fps_counter_text_update.system(),
+        )
+        .on_state_update(STATE_STAGE, AppState::InGame, rts_camera_system.system())
         .run();
 }
 
-pub struct HeightMap(rome_map::Map);
+#[derive(Clone)]
+enum AppState {
+    Loading,
+    InGame,
+}
 
-#[derive(Default)]
-struct HeightMapLoader;
-
-impl AssetLoader<HeightMap> for HeightMapLoader {
-    fn from_bytes(&self, _path: &Path, bytes: Vec<u8>) -> Result<HeightMap, anyhow::Error> {
-        println!("Unzipping");
-
-        let mut decoder = zstd::Decoder::new(&*bytes).unwrap();
-        let mut unzipped = Vec::new();
-        decoder.read_to_end(&mut unzipped).unwrap();
-
-        println!("Deserializing");
-        let map: rome_map::Map = bincode::deserialize(&unzipped).unwrap();
-        println!("Done loading heightmap");
-
-        Ok(HeightMap(map))
-    }
-
-    fn extensions(&self) -> &[&str] {
-        &["mapdat"]
-    }
+pub struct RomeAssets {
+    map_material: Handle<MapMaterial>,
+    clipmap_mesh: Handle<Mesh>,
 }
 
 fn fps_counter_text_update(diagnostics: Res<Diagnostics>, mut query: Query<&mut Text>) {
-    for mut text in &mut query.iter() {
+    for mut text in query.iter_mut() {
         if let Some(fps) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
             if let Some(average) = fps.average() {
                 text.value = format!("FPS: {:.0}", average.round()).into();
@@ -70,62 +63,49 @@ fn fps_counter_text_update(diagnostics: Res<Diagnostics>, mut query: Query<&mut 
     }
 }
 
-fn setup(
-    mut commands: Commands,
-    mut textures: ResMut<Assets<Texture>>,
-    mut materials: ResMut<Assets<MapMaterial>>,
-    mut heightmap: ResMut<Assets<HeightMap>>,
+fn start_game(
+    commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    asset_server: Res<AssetServer>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    assets: Res<RomeAssets>,
+    asset_server: ResMut<AssetServer>
 ) {
-    let map_handle = asset_server.load_sync(&mut heightmap, "assets/map/heightmap/map.mapdat").unwrap();
-    let map = heightmap.get(&map_handle).unwrap();
+    dbg!("Started game");
 
-    let generator = MapGenerator::new();
-    let meshes = generator.generate_meshes(&map.0, &mut meshes);
-
-    let forest_texture = asset_server.load_sync(&mut textures, "assets/map/textures/forest2.png").unwrap();
-    textures.get_mut(&forest_texture).unwrap().address_mode = AddressMode::Repeat;
-
-    let beach_texture = asset_server.load_sync(&mut textures, "assets/map/textures/beach_sand.png").unwrap();
-    textures.get_mut(&beach_texture).unwrap().address_mode = AddressMode::Repeat;
-
-    let map_material = MapMaterial { forest_texture, beach_texture };
-    let map_material = materials.add(map_material);
-
-    for ((x, z), mesh) in meshes {
-        let translation = Vec3::new(x as f32, 0.0, z as f32);
-
-        commands
-            .spawn(MeshComponents {
-                mesh,
-                render_pipelines: map::shader::render_pipelines(),
-                transform: Transform::from_translation(translation),
-                ..Default::default()
-            })
-            .with(map_material.clone())
-            .with(map::shader::TimeNode::default());
-    }
-
-    asset_server.watch_for_changes().unwrap();
-    let italy = Vec3::new(599.0, 0.0, 440.0);
+    // let italy = Vec3::new(599.0, 0.0, 440.0);
+    let italy = Vec3::new(0.0, 0.0, 0.0);
     let angle = std::f32::consts::PI / 4.0;
-    let camera_state = rts_camera::State::new_looking_at_zoomed_out(italy, angle, 180.0);
+    let camera_state = rts_camera::RtsCamera::new_looking_at_zoomed_out(italy, angle, 180.0);
     let camera_transform = camera_state.camera_transform();
-    let font_handle = asset_server.load("assets/fonts/FiraSans-SemiBold.ttf").unwrap();
+    let font_handle = asset_server.load("fonts/FiraSans-SemiBold.ttf");
 
     commands
-        .spawn(LightComponents {
-            transform: Transform::from_translation(Vec3::new(0.0, 180.0, 437.0)),
+        .spawn(MeshBundle {
+            mesh: assets.clipmap_mesh.clone(),
+            render_pipelines: map::shader::render_pipelines(),
+            transform: Transform::from_translation(Vec3::default()),
             ..Default::default()
         })
-        .spawn(Camera3dComponents {
+        .with(assets.map_material.clone())
+        .spawn(Camera3dBundle {
             transform: camera_transform,
             ..Default::default()
         })
-        .with(camera_state)
-        .spawn(UiCameraComponents::default())
-        .spawn(TextComponents {
+        .with(camera_state);
+
+    // debug cube
+    commands
+        .spawn(PbrBundle {
+            mesh: meshes.add(Mesh::from(Cube::new(10.0))),
+            material: materials.add(StandardMaterial::default()),
+            ..Default::default()
+        })
+        .spawn(LightBundle {
+            transform: Transform::from_translation(Vec3::new(0.0, 180.0, 437.0)),
+            ..Default::default()
+        })
+        .spawn(CameraUiBundle::default())
+        .spawn(TextBundle {
             style: Style {
                 align_self: AlignSelf::FlexEnd,
                 ..Default::default()
@@ -135,6 +115,7 @@ fn setup(
                 font: font_handle,
                 style: TextStyle {
                     font_size: 40.0,
+                    alignment: TextAlignment::default(),
                     color: Color::WHITE,
                 },
             },
