@@ -21,7 +21,6 @@ impl MeshBuilder {
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
         mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, self.indexer.into_positions());
         mesh.set_indices(Some(Indices::U32(self.triangle_indices)));
-        dbg!(mesh.get_vertex_buffer_data().len());
         mesh
     }
 }

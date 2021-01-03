@@ -8,6 +8,7 @@ use crate::rts_camera::rts_camera_system;
 use bevy::prelude::shape::Cube;
 use crate::map::mesh::build_mesh;
 use bevy::render::camera::VisibleEntities;
+use bevy::render::render_graph::base::MainPass;
 
 mod loading;
 mod map;
@@ -67,6 +68,7 @@ fn start_game(
     commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut mapmaterial: ResMut<Assets<MapMaterial>>,
     assets: Res<RomeAssets>,
     asset_server: ResMut<AssetServer>
 ) {
@@ -86,7 +88,10 @@ fn start_game(
             transform: Transform::from_translation(Vec3::default()),
             ..Default::default()
         })
-        .with(assets.map_material.clone())
+        .with(MainPass)
+        .with(mapmaterial.add(MapMaterial {
+            forest: asset_server.load("map/textures/forest2.png"),
+        }))
         .spawn(Camera3dBundle {
             transform: camera_transform,
             ..Default::default()

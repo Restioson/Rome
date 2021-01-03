@@ -90,7 +90,7 @@ fn loading(
         .get_mut(&forest_handle)
         .filter(|_| loading.forest.is_none())
     {
-        set_address_mode(&mut tx.sampler, AddressMode::Repeat);
+        // set_address_mode(&mut tx.sampler, AddressMode::Repeat);
         loading.forest = Some(forest_handle);
     }
 
@@ -129,9 +129,7 @@ fn loading(
     }) = loading.all_loaded()
     {
         let map_material = materials.add(MapMaterial {
-            forest,
-            sand,
-            heightmap,
+            forest: asset_server.load("map/textures/forest2.png"),
         });
         let clipmap_mesh = meshes.add(build_mesh(4));
         commands.insert_resource(RomeAssets {

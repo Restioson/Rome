@@ -15,8 +15,8 @@ static PIPELINE: OnceCell<Handle<PipelineDescriptor>> = OnceCell::new();
 #[uuid = "4cb07614-40a2-45d6-ae3f-20ca7e800f1f"]
 pub struct MapMaterial {
     pub forest: Handle<Texture>,
-    pub sand: Handle<Texture>,
-    pub heightmap: Handle<Texture>,
+    // pub sand: Handle<Texture>,
+    // pub heightmap: Handle<Texture>,
 }
 
 #[derive(RenderResources, Default)]
