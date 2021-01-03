@@ -128,16 +128,17 @@ fn loading(
         heightmap,
     }) = loading.all_loaded()
     {
-        let map_material = materials.add(MapMaterial {
-            forest: asset_server.load("map/textures/forest2.png"),
-        });
-        let clipmap_mesh = meshes.add(build_mesh(4));
+        dbg!(&forest.is_strong());
+        let map_material = materials.add(MapMaterial { forest });
+        dbg!(&map_material.is_strong());
+        let clipmap_mesh = meshes.add(build_mesh(4)); // TODO in task pool
         commands.insert_resource(RomeAssets {
             map_material,
             clipmap_mesh,
         });
 
         state.set_next(AppState::InGame).unwrap();
+        dbg!("Done loading");
         // TODO remove loading_state resource
     }
 }

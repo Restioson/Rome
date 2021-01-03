@@ -68,7 +68,8 @@ fn start_game(
     commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut mapmaterial: ResMut<Assets<MapMaterial>>,
+    mut map_materials: ResMut<Assets<MapMaterial>>,
+    mut textures: Res<Assets<Texture>>,
     assets: Res<RomeAssets>,
     asset_server: ResMut<AssetServer>
 ) {
@@ -81,6 +82,10 @@ fn start_game(
     let camera_transform = camera_state.camera_transform();
     let font_handle = asset_server.load("fonts/FiraSans-SemiBold.ttf");
 
+    dbg!(assets.map_material.is_strong());
+    dbg!(&map_materials.get(&assets.map_material).unwrap().forest.is_strong());
+    dbg!(textures.get(&map_materials.get(&assets.map_material).unwrap().forest).is_some());
+
     commands
         .spawn(MeshBundle {
             mesh: assets.clipmap_mesh.clone(),
@@ -89,9 +94,7 @@ fn start_game(
             ..Default::default()
         })
         .with(MainPass)
-        .with(mapmaterial.add(MapMaterial {
-            forest: asset_server.load("map/textures/forest2.png"),
-        }))
+        .with(assets.map_material.clone())
         .spawn(Camera3dBundle {
             transform: camera_transform,
             ..Default::default()
