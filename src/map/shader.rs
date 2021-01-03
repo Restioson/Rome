@@ -15,8 +15,8 @@ static PIPELINE: OnceCell<Handle<PipelineDescriptor>> = OnceCell::new();
 #[uuid = "4cb07614-40a2-45d6-ae3f-20ca7e800f1f"]
 pub struct MapMaterial {
     pub forest: Handle<Texture>,
-    // pub sand: Handle<Texture>,
-    // pub heightmap: Handle<Texture>,
+    pub sand: Handle<Texture>,
+    pub heightmap: Handle<Texture>,
 }
 
 #[derive(RenderResources, Default)]
@@ -29,7 +29,6 @@ pub fn setup(
     mut shaders: ResMut<Assets<Shader>>,
     mut render_graph: ResMut<RenderGraph>,
 ) {
-    dbg!("Set up shaders");
     let pipeline_handle = pipelines.add(PipelineDescriptor::default_config(ShaderStages {
         vertex: shaders.add(Shader::from_glsl(ShaderStage::Vertex, VERTEX_SHADER)),
         fragment: Some(shaders.add(Shader::from_glsl(ShaderStage::Fragment, FRAGMENT_SHADER))),

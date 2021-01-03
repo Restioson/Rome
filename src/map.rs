@@ -46,7 +46,6 @@ pub struct RomeMapPlugin;
 
 impl Plugin for RomeMapPlugin {
     fn build(&self, app: &mut AppBuilder) {
-        dbg!("added shader map material");
         app.add_asset::<HeightMap>()
             .add_asset::<shader::MapMaterial>()
             .add_startup_system(shader::setup.system())

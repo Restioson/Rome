@@ -3,11 +3,10 @@ use crate::map::HeightMap;
 use crate::map::{mesh::build_mesh, HeightMapLoader};
 use crate::{AppState, RomeAssets, STATE_STAGE};
 use bevy::prelude::*;
-use bevy::render::texture::{
-    AddressMode, Extent3d, SamplerDescriptor, TextureDimension, TextureFormat,
-};
+use bevy::render::texture::{AddressMode, Extent3d, SamplerDescriptor, TextureDimension, TextureFormat, FilterMode};
 use bevy::tasks::AsyncComputeTaskPool;
 use itertools::Itertools;
+use byteorder::{WriteBytesExt, NativeEndian};
 
 pub struct LoadRomeAssets;
 
@@ -41,14 +40,14 @@ struct LoadedAssets {
 impl LoadingAssets {
     fn all_loaded(&self) -> Option<LoadedAssets> {
         match (
-            self.forest.clone(),
-            self.sand.clone(),
-            self.heightmap.clone(),
+            self.forest.as_ref(),
+            self.sand.as_ref(),
+            self.heightmap.as_ref(),
         ) {
             (Some(forest), Some(sand), Some(heightmap)) => Some(LoadedAssets {
-                forest,
-                sand,
-                heightmap,
+                forest: forest.clone(),
+                sand: sand.clone(),
+                heightmap: heightmap.clone(),
             }),
             _ => None,
         }
@@ -56,6 +55,7 @@ impl LoadingAssets {
 }
 
 fn queue_asset_load(asset_server: Res<AssetServer>) {
+    asset_server.watch_for_changes().unwrap();
     asset_server.load_folder("map/heightmap").unwrap();
     asset_server.load_folder("map/textures").unwrap();
 }
@@ -70,28 +70,32 @@ fn loading(
     mut meshes: ResMut<Assets<Mesh>>,
     asset_server: Res<AssetServer>,
 ) {
-    fn set_address_mode(s: &mut SamplerDescriptor, m: AddressMode) {
-        s.address_mode_u = m;
-        s.address_mode_v = m;
-        s.address_mode_w = m;
+    fn setup_texture(s: &mut SamplerDescriptor) {
+        s.address_mode_u = AddressMode::Repeat;
+        s.address_mode_v = AddressMode::Repeat;
+        s.address_mode_w = AddressMode::Repeat;
+        s.mipmap_filter = FilterMode::Linear;
     }
 
-    let sand_handle = asset_server.load("map/textures/beach_sand.png");
+    let sand_handle = asset_server.load::<Texture, &str>("map/textures/beach_sand.png");
     if let Some(tx) = textures
         .get_mut(&sand_handle)
         .filter(|_| loading.sand.is_none())
     {
-        set_address_mode(&mut tx.sampler, AddressMode::Repeat);
-        loading.sand = Some(sand_handle);
+        setup_texture(&mut tx.sampler);
+        let tx = tx.clone();
+        // TODO: For some reason this is required, else the texture will be dropped early (???)
+        loading.sand = Some(textures.add(tx));
     }
 
-    let forest_handle = asset_server.load("map/textures/forest2.png");
+    let forest_handle = asset_server.load::<Texture, &str>("map/textures/forest2.png");
     if let Some(tx) = textures
         .get_mut(&forest_handle)
         .filter(|_| loading.forest.is_none())
     {
-        // set_address_mode(&mut tx.sampler, AddressMode::Repeat);
-        loading.forest = Some(forest_handle);
+        setup_texture(&mut tx.sampler);
+        let tx = tx.clone();
+        loading.forest = Some(textures.add(tx));
     }
 
     if let Some(map) = heightmaps
@@ -101,15 +105,15 @@ fn loading(
         let mut bytes = Vec::with_capacity(1024 * 1024 * 2);
 
         for (x, z) in (0..1024).cartesian_product(0..1024) {
-            let height = map.0.get(x, z).height;
-            bytes.push((height.0 >> 8) as u8);
-            bytes.push((height.0 & 0xff) as u8);
+            let px = map.0.get(x, z);
+
+            bytes.write_i16::<NativeEndian>(if px.is_water { 0 } else { px.height.0 }).unwrap();
         }
 
         let texture_map = Texture {
             data: bytes,
             size: Extent3d::new(1024, 1024, 1),
-            format: TextureFormat::Rgba32Float,
+            format: TextureFormat::R16Sint,
             dimension: TextureDimension::D2,
             sampler: SamplerDescriptor {
                 address_mode_u: AddressMode::Repeat,
@@ -128,9 +132,7 @@ fn loading(
         heightmap,
     }) = loading.all_loaded()
     {
-        dbg!(&forest.is_strong());
-        let map_material = materials.add(MapMaterial { forest });
-        dbg!(&map_material.is_strong());
+        let map_material = materials.add(MapMaterial { forest, sand, heightmap });
         let clipmap_mesh = meshes.add(build_mesh(4)); // TODO in task pool
         commands.insert_resource(RomeAssets {
             map_material,
@@ -138,7 +140,6 @@ fn loading(
         });
 
         state.set_next(AppState::InGame).unwrap();
-        dbg!("Done loading");
         // TODO remove loading_state resource
     }
 }

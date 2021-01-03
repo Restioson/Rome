@@ -6,8 +6,6 @@ use crate::loading::LoadRomeAssets;
 use crate::map::RomeMapPlugin;
 use crate::rts_camera::rts_camera_system;
 use bevy::prelude::shape::Cube;
-use crate::map::mesh::build_mesh;
-use bevy::render::camera::VisibleEntities;
 use bevy::render::render_graph::base::MainPass;
 
 mod loading;
@@ -68,23 +66,15 @@ fn start_game(
     commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut map_materials: ResMut<Assets<MapMaterial>>,
-    mut textures: Res<Assets<Texture>>,
     assets: Res<RomeAssets>,
     asset_server: ResMut<AssetServer>
 ) {
-    dbg!("Started game");
-
     // let italy = Vec3::new(599.0, 0.0, 440.0);
     let italy = Vec3::new(0.0, 0.0, 0.0);
     let angle = std::f32::consts::PI / 4.0;
     let camera_state = rts_camera::RtsCamera::new_looking_at_zoomed_out(italy, angle, 180.0);
     let camera_transform = camera_state.camera_transform();
     let font_handle = asset_server.load("fonts/FiraSans-SemiBold.ttf");
-
-    dbg!(assets.map_material.is_strong());
-    dbg!(&map_materials.get(&assets.map_material).unwrap().forest.is_strong());
-    dbg!(textures.get(&map_materials.get(&assets.map_material).unwrap().forest).is_some());
 
     commands
         .spawn(MeshBundle {
