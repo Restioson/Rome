@@ -4,13 +4,12 @@ use bevy::diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin};
 use crate::map::shader::MapMaterial;
 use crate::loading::LoadRomeAssets;
 use crate::map::RomeMapPlugin;
-use crate::rts_camera::rts_camera_system;
 use bevy::prelude::shape::Cube;
 use bevy::render::render_graph::base::MainPass;
+use goshawk::{RtsCamera, ZoomSettings, PanSettings, TurnSettings};
 
 mod loading;
 mod map;
-mod rts_camera;
 
 const STATE_STAGE: &'static str = "rome_app_state_stage";
 
@@ -31,13 +30,9 @@ fn main() {
         .add_plugin(FrameTimeDiagnosticsPlugin::default())
         .add_plugin(LoadRomeAssets)
         .add_plugin(RomeMapPlugin)
+        .add_system(fps_counter_text_update.system())
         .on_state_enter(STATE_STAGE, AppState::InGame, start_game.system())
-        .on_state_update(
-            STATE_STAGE,
-            AppState::InGame,
-            fps_counter_text_update.system(),
-        )
-        .on_state_update(STATE_STAGE, AppState::InGame, rts_camera_system.system())
+        .on_state_update(STATE_STAGE, AppState::InGame, goshawk::rts_camera_system.system())
         .run();
 }
 
@@ -71,9 +66,6 @@ fn start_game(
 ) {
     // let italy = Vec3::new(599.0, 0.0, 440.0);
     let italy = Vec3::new(0.0, 0.0, 0.0);
-    let angle = std::f32::consts::PI / 4.0;
-    let camera_state = rts_camera::RtsCamera::new_looking_at_zoomed_out(italy, angle, 180.0);
-    let camera_transform = camera_state.camera_transform();
     let font_handle = asset_server.load("fonts/FiraSans-SemiBold.ttf");
 
     commands
@@ -85,11 +77,33 @@ fn start_game(
         })
         .with(MainPass)
         .with(assets.map_material.clone())
-        .spawn(Camera3dBundle {
-            transform: camera_transform,
+        .spawn(Camera3dBundle::default())
+        .with(RtsCamera {
+            looking_at: italy,
+            zoom_distance: 100.0,
             ..Default::default()
         })
-        .with(camera_state);
+        .with(ZoomSettings {
+            scroll_accel: 20.0,
+            max_velocity: 80.0,
+            idle_deceleration: 400.0,
+            angle_change_zone: 75.0..=200.0,
+            distance_range: 50.0..=300.0,
+            ..Default::default()
+        })
+        .with(PanSettings {
+            mouse_accel: 50.0,
+            keyboard_accel: 40.0,
+            idle_deceleration: 50.0,
+            max_speed: 20.0,
+            pan_speed_zoom_factor_range: 1.0..=4.0,
+            ..Default::default()
+        })
+        .with(TurnSettings {
+            mouse_turn_margin: 0.0,
+            max_speed: 0.0, // disable turning
+            ..Default::default()
+        });
 
     // debug cube
     commands

@@ -34,6 +34,8 @@ pub fn build_mesh(lod_levels: u8) -> Mesh {
     let g = 128 / 2; // TODO ?
     let pad = 1;
 
+    // TODO normal map
+
     for lod_level in 0..lod_levels {
         let step: usize = 1 << (lod_level as usize);
         let half_step: isize = (step >> 1) as isize;
