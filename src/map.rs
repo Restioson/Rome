@@ -38,6 +38,14 @@ use bevy::tasks::AsyncComputeTaskPool;
 use std::future::Future;
 use std::io::Read;
 use std::pin::Pin;
+use bevy::render::texture::{Extent3d, TextureFormat, AddressMode, SamplerDescriptor, TextureDimension};
+use itertools::Itertools;
+use byteorder::{NativeEndian, WriteBytesExt};
+use std::cmp;
+use ordered_float::OrderedFloat;
+use image::{Rgb, Rgba};
+use bevy::render::pipeline::PrimitiveTopology;
+use bevy::render::mesh::Indices;
 
 pub mod mesh;
 pub mod shader;
@@ -57,9 +65,9 @@ impl Plugin for RomeMapPlugin {
     }
 }
 
-#[derive(TypeUuid)]
-#[uuid = "7b7c08b3-986e-49d8-85da-107024f177f1"]
-pub struct HeightMap(pub rome_map::Map);
+fn translate_heightmap() {
+
+}
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -101,3 +109,148 @@ impl AssetLoader for HeightMapLoader {
         &["mapdat"]
     }
 }
+
+#[derive(TypeUuid)]
+#[uuid = "7b7c08b3-986e-49d8-85da-107024f177f1"]
+pub struct HeightMap(pub rome_map::Map);
+
+fn clamp(a: i32, max: u32) -> u32 {
+    cmp::max(cmp::min(a, max as i32), 0) as u32
+}
+
+const F: f32 = 0.1;
+
+impl HeightMap {
+    fn sample_height(&self, x: i32, y: i32) -> u16 {
+        let px = self.0.get(clamp(x, self.0.width as u32), clamp(y, self.0.height as u32));
+        if px.is_water || px.height.0 < 0 {
+            0
+        } else {
+            px.height.0 as u16
+        }
+    }
+
+    fn sample_vec3(&self, x: i32, y: i32, height_factor: f32) -> Vec3 {
+        Vec3::new(x as f32, self.sample_height(x, y) as f32 * height_factor * F, y as f32)
+    }
+
+    fn sample_normal(&self, x: i32, y: i32, height_factor: f32) -> Vec3 {
+        // let top_left = self.sample_height(x - 1, y - 1) as f32 * F;
+        // let top_right = self.sample_height(x + 1, y - 1) as f32 * F;
+        // let bottom_left = self.sample_height(x - 1, y + 1) as f32 * F;
+        // let bottom_right = self.sample_height(x + 1, y + 1) as f32 * F;
+        //
+        // // Normal
+        // let normal_1 = Vec3::new(top_left - top_right , 2.0, bottom_left - top_left).normalize();
+        // let normal_2 = Vec3::new(bottom_left - bottom_right, 2.0, top_right - bottom_right).normalize();
+        // (normal_1 + normal_2).normalize()
+
+        let top_left = self.sample_vec3(x, y, height_factor);
+        let bottom_left = self.sample_vec3(x, y + 1, height_factor);
+        let bottom_right = self.sample_vec3(x + 1, y + 1, height_factor);
+        let top_right = self.sample_vec3(x + 1, y, height_factor);
+
+        // let n1 = (bottom_left - top_left).cross(bottom_right - top_left);
+        // let n2 = (bottom_left - top_right).cross(bottom_right - top_right);
+        //
+        // (n1 + n2).normalize()
+        (bottom_right - bottom_left).cross(top_left - bottom_left).normalize()
+    }
+}
+
+impl Into<(Texture, Mesh)> for &HeightMap {
+    fn into(self) -> (Texture, Mesh) {
+        const HEIGHT_BITS: u8 = 8;
+        const LIGHT_BITS: u8 = 16 - HEIGHT_BITS;
+        const MAX_LIGHT_LEVEL: u8 = ((1u16 << LIGHT_BITS) - 1) as u8;
+        const AMBIENT_LIGHT_STRENGTH: OrderedFloat<f32> = OrderedFloat(0.1);
+
+        let light_pos = Vec3::new(-1.0, 0.5, -0.3).normalize();
+
+        let mut max = 0;
+        for (y, x) in (0..self.0.height).cartesian_product(0..self.0.width) {
+            let h = self.0.get(x as u32, y as u32).height.0;
+            if h > max {
+                max = h;
+            }
+        }
+
+        let factor = ((1 << HEIGHT_BITS) - 1) as f32 / max as f32;
+
+        let mut bytes = Vec::with_capacity(1024 * 1024 * 2);
+
+        let mut normal_image = image::ImageBuffer::new(1024, 1024);
+        let mut brightness_image = image::ImageBuffer::new(1024, 1024);
+        let mut heightmap_image = image::ImageBuffer::new(1024, 1024);
+        let mut line_indices = Vec::new();
+        let mut line_coords = Vec::new();
+        let mut ctr = 0;
+
+        for (y, x) in (0..1024).cartesian_product(0..1024) {
+            let normal = self.sample_normal(x, y, factor);
+
+            let diffuse = cmp::max(OrderedFloat(normal.dot(light_pos)), OrderedFloat(0.0));
+            let brightness = cmp::min(OrderedFloat(1.0), diffuse + AMBIENT_LIGHT_STRENGTH);
+
+            if brightness.0 > 1.0 {
+                dbg!(brightness);
+            }
+
+            let brightness_level = (brightness.0 as f32 * MAX_LIGHT_LEVEL as f32).round() as u16;
+            let height = (self.sample_height(x, y) as f32 * factor).round() as u16;
+
+            // if height > 0 {
+            //     println!("{}", brightness_level);
+            // }
+
+            let b = (brightness.0 * 255.0) as u8;
+            let p = |c| ((c + 1.0) / 2.0 * 255.0) as u8;
+            let h = (height as f32 * 255.0) as u8;
+            normal_image.put_pixel(x as u32, y as u32, Rgb([p(normal.x), p(normal.y), p(normal.z)]));
+            brightness_image.put_pixel(x as u32, y as u32, Rgba([b, b, b, 255]));
+            heightmap_image.put_pixel(x as u32, y as u32, Rgba([h, h, h, 255]));
+
+            let line_start = Vec3::new(x as f32 + 0.5, 0.0, y as f32 + 0.5);
+            let line_end = line_start + (normal / 2.0);
+
+            line_coords.push([line_start.x, line_start.y, line_start.z]);
+            line_indices.push(ctr);
+            ctr += 1;
+            line_coords.push([line_end.x, line_end.y, line_end.z]);
+            line_indices.push(ctr);
+            ctr += 1;
+
+            let packed = brightness_level | (height << HEIGHT_BITS);
+            bytes.write_u16::<NativeEndian>(packed).unwrap();
+        }
+
+        normal_image.save("normalmap.png").unwrap();
+        brightness_image.save("brightnessmap.png").unwrap();
+
+        let texture = Texture {
+            data: bytes,
+            size: Extent3d::new(1024, 1024, 1),
+            format: TextureFormat::R16Uint,
+            dimension: TextureDimension::D2,
+            sampler: SamplerDescriptor {
+                address_mode_u: AddressMode::Repeat,
+                address_mode_v: AddressMode::Repeat,
+                address_mode_w: AddressMode::Repeat,
+                ..Default::default()
+            },
+        };
+
+        let mut mesh = Mesh::new(PrimitiveTopology::LineList);
+        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, line_coords);
+        mesh.set_indices(Some(Indices::U32(line_indices)));
+
+        (texture, mesh)
+    }
+}
+
+//
+// impl From<rome_map::Map> for MapTextures {
+//     fn from(map: &Map) -> Self {
+//
+//     }
+// }

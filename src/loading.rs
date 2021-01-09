@@ -1,12 +1,12 @@
-use crate::map::shader::MapMaterial;
+use crate::map::shader::{MapMaterial};
 use crate::map::HeightMap;
 use crate::map::{mesh::build_mesh, HeightMapLoader};
 use crate::{AppState, RomeAssets, STATE_STAGE};
 use bevy::prelude::*;
-use bevy::render::texture::{AddressMode, Extent3d, SamplerDescriptor, TextureDimension, TextureFormat, FilterMode};
+use bevy::render::texture::{AddressMode, SamplerDescriptor, FilterMode};
 use bevy::tasks::AsyncComputeTaskPool;
-use itertools::Itertools;
-use byteorder::{WriteBytesExt, NativeEndian};
+use bevy::render::pipeline::{PipelineDescriptor, RenderPipeline};
+use bevy::render::shader::{ShaderStages, ShaderStage};
 
 pub struct LoadRomeAssets;
 
@@ -28,6 +28,7 @@ struct LoadingAssets {
     forest: Option<Handle<Texture>>,
     sand: Option<Handle<Texture>>,
     heightmap: Option<Handle<Texture>>,
+    normal_mesh: Option<Handle<Mesh>>,
 }
 
 /// Assets loaded from disk
@@ -35,6 +36,7 @@ struct LoadedAssets {
     forest: Handle<Texture>,
     sand: Handle<Texture>,
     heightmap: Handle<Texture>,
+    normal_mesh: Handle<Mesh>,
 }
 
 impl LoadingAssets {
@@ -43,11 +45,13 @@ impl LoadingAssets {
             self.forest.as_ref(),
             self.sand.as_ref(),
             self.heightmap.as_ref(),
+            self.normal_mesh.as_ref()
         ) {
-            (Some(forest), Some(sand), Some(heightmap)) => Some(LoadedAssets {
+            (Some(forest), Some(sand), Some(heightmap), Some(mesh)) => Some(LoadedAssets {
                 forest: forest.clone(),
                 sand: sand.clone(),
                 heightmap: heightmap.clone(),
+                normal_mesh: mesh.clone()
             }),
             _ => None,
         }
@@ -68,6 +72,8 @@ fn loading(
     mut loading: ResMut<LoadingAssets>,
     mut state: ResMut<State<AppState>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    mut pipelines: ResMut<Assets<PipelineDescriptor>>,
+    mut shaders: ResMut<Assets<Shader>>,
     asset_server: Res<AssetServer>,
 ) {
     fn setup_texture(s: &mut SamplerDescriptor) {
@@ -102,34 +108,16 @@ fn loading(
         .get("map/heightmap/map.mapdat")
         .filter(|_| loading.heightmap.is_none())
     {
-        let mut bytes = Vec::with_capacity(1024 * 1024 * 2);
-
-        for (x, z) in (0..1024).cartesian_product(0..1024) {
-            let px = map.0.get(x, z);
-
-            bytes.write_i16::<NativeEndian>(if px.is_water { 0 } else { px.height.0 }).unwrap();
-        }
-
-        let texture_map = Texture {
-            data: bytes,
-            size: Extent3d::new(1024, 1024, 1),
-            format: TextureFormat::R16Sint,
-            dimension: TextureDimension::D2,
-            sampler: SamplerDescriptor {
-                address_mode_u: AddressMode::Repeat,
-                address_mode_v: AddressMode::Repeat,
-                address_mode_w: AddressMode::Repeat,
-                ..Default::default()
-            },
-        };
-
-        loading.heightmap = Some(textures.add(texture_map));
+        let (texture, normals) = map.into();
+        loading.heightmap = Some(textures.add(texture));
+        loading.normal_mesh = Some(meshes.add(normals));
     }
 
     if let Some(LoadedAssets {
         forest,
         sand,
         heightmap,
+        normal_mesh
     }) = loading.all_loaded()
     {
         let map_material = materials.add(MapMaterial { forest, sand, heightmap });
@@ -137,6 +125,7 @@ fn loading(
         commands.insert_resource(RomeAssets {
             map_material,
             clipmap_mesh,
+            normal_mesh
         });
 
         state.set_next(AppState::InGame).unwrap();

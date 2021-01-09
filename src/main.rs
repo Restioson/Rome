@@ -7,6 +7,8 @@ use crate::map::RomeMapPlugin;
 use bevy::prelude::shape::Cube;
 use bevy::render::render_graph::base::MainPass;
 use goshawk::{RtsCamera, ZoomSettings, PanSettings, TurnSettings};
+use bevy::render::pipeline::{PipelineDescriptor, RenderPipeline};
+use bevy::render::shader::{ShaderStage, ShaderStages};
 
 mod loading;
 mod map;
@@ -45,13 +47,14 @@ enum AppState {
 pub struct RomeAssets {
     map_material: Handle<MapMaterial>,
     clipmap_mesh: Handle<Mesh>,
+    normal_mesh: Handle<Mesh>,
 }
 
 fn fps_counter_text_update(diagnostics: Res<Diagnostics>, mut query: Query<&mut Text>) {
     for mut text in query.iter_mut() {
-        if let Some(fps) = diagnostics.get(FrameTimeDiagnosticsPlugin::FPS) {
-            if let Some(average) = fps.average() {
-                text.value = format!("FPS: {:.0}", average.round()).into();
+        if let (Some(fps), Some(frame_time)) = (diagnostics.get(FrameTimeDiagnosticsPlugin::FPS), diagnostics.get(FrameTimeDiagnosticsPlugin::FRAME_TIME)) {
+            if let (Some(average_fps), Some(average_frame_time)) = (fps.average(), frame_time.average()) {
+                text.value = format!("FPS: {:.0} Frame time: {:.2}ms", average_fps.round(), average_frame_time * 1000.0).into();
             }
         }
     }
@@ -61,6 +64,8 @@ fn start_game(
     commands: &mut Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    mut pipelines: ResMut<Assets<PipelineDescriptor>>,
+    mut shaders: ResMut<Assets<Shader>>,
     assets: Res<RomeAssets>,
     asset_server: ResMut<AssetServer>
 ) {
@@ -68,16 +73,57 @@ fn start_game(
     let italy = Vec3::new(0.0, 0.0, 0.0);
     let font_handle = asset_server.load("fonts/FiraSans-SemiBold.ttf");
 
-    commands
-        .spawn(MeshBundle {
-            mesh: assets.clipmap_mesh.clone(),
-            render_pipelines: map::shader::render_pipelines(),
-            transform: Transform::from_translation(Vec3::default()),
-            ..Default::default()
-        })
-        .with(MainPass)
-        .with(assets.map_material.clone())
-        .spawn(Camera3dBundle::default())
+
+    const VERTEX_SHADER: &str = "
+        #version 450
+
+        layout(location = 0) in vec3 Vertex_Position;
+
+        layout(set = 2, binding = 4) uniform utexture2D MapMaterial_heightmap;
+        layout(set = 2, binding = 5) uniform sampler MapMaterial_heightmap_sampler;
+
+        layout(set = 0, binding = 0) uniform Camera {
+            mat4 ViewProj;
+        };
+
+        layout(set = 1, binding = 0) uniform Transform {
+            mat4 Model;
+        };
+
+        float height(ivec2 pos) {
+            uint packed = texelFetch(usampler2D(MapMaterial_heightmap, MapMaterial_heightmap_sampler), pos, 0).r;
+            uint height = packed >> 8;
+            return height;
+        }
+
+        void main() {
+            vec3 p = Vertex_Position;
+            float avg_height = (
+                height(ivec2(floor(p.x), floor(p.z))) +
+                height(ivec2(ceil(p.x), ceil(p.z))) +
+                height(ivec2(floor(p.x), ceil(p.z))) +
+                height(ivec2(ceil(p.x), floor(p.z)))
+            ) / 4.0;
+            p.y += avg_height * 0.1;
+
+            gl_Position = ViewProj * Model * vec4(p, 1.0);
+        }
+        ";
+    const FRAGMENT_SHADER: &str = "
+            #version 450
+            layout(location = 0) out vec4 o_Target;
+
+            void main() {
+                o_Target = vec4(1.0, 1.0, 1.0, 1.0);
+            }
+        ";
+
+    let pipeline_handle = pipelines.add(PipelineDescriptor::default_config(ShaderStages {
+        vertex: shaders.add(Shader::from_glsl(ShaderStage::Vertex, VERTEX_SHADER)),
+        fragment: Some(shaders.add(Shader::from_glsl(ShaderStage::Fragment, FRAGMENT_SHADER))),
+    }));
+
+    commands.spawn(Camera3dBundle::default())
         .with(RtsCamera {
             looking_at: italy,
             zoom_distance: 100.0,
@@ -99,11 +145,28 @@ fn start_game(
             pan_speed_zoom_factor_range: 1.0..=4.0,
             ..Default::default()
         })
-        .with(TurnSettings {
-            mouse_turn_margin: 0.0,
-            max_speed: 0.0, // disable turning
-            ..Default::default()
+        .with_children(|builder| {
+            builder.spawn(MeshBundle {
+                    mesh: assets.normal_mesh.clone(),
+                    render_pipelines: RenderPipelines::from_pipelines(vec![RenderPipeline::new(pipeline_handle)]),
+                    ..Default::default()
+                }
+            ).with(assets.map_material.clone())
+            .spawn(MeshBundle {
+                mesh: assets.clipmap_mesh.clone(),
+                render_pipelines: map::shader::render_pipelines(),
+                transform: Transform::from_translation(Vec3::default()),
+                ..Default::default()
+            })
+            .with(assets.map_material.clone());
         });
+
+    // TODO
+        // .with(TurnSettings {
+        //     mouse_turn_margin: 0.0,
+        //     max_speed: 0.0, // disable turning
+        //     ..Default::default()
+        // });
 
     // debug cube
     commands

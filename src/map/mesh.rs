@@ -1,6 +1,5 @@
 use bevy::render::mesh::{Indices, Mesh};
 use bevy::render::pipeline::PrimitiveTopology;
-use rand::Rng;
 use std::cmp;
 use std::collections::HashMap;
 
@@ -32,9 +31,7 @@ pub fn build_mesh(lod_levels: u8) -> Mesh {
 
     // How many grid cells to use most-detailed LOD for, divided by two
     let g = 128 / 2; // TODO ?
-    let pad = 1;
-
-    // TODO normal map
+    let pad = 1; // TODO
 
     for lod_level in 0..lod_levels {
         let step: usize = 1 << (lod_level as usize);
@@ -46,76 +43,83 @@ pub fn build_mesh(lod_levels: u8) -> Mesh {
             for x in (-lod_radius..lod_radius).step_by(step) {
                 // Don't draw inside of other LOD's areas
                 if cmp::max((x + half_step).abs(), (z + half_step).abs()) >= g * half_step {
-                    // Tessellate the square as such:
-                    //   A-----B-----C   ^     ^
-                    //   | \   |   / |   |   half-step
-                    //   |   \ | /   |         |
-                    //   D-----E-----F  step   v
-                    //   |   / | \   |
-                    //   | /   |   \ |   |
-                    //   G-----H-----I   v
-                    //   <-   step  ->
 
-                    let (x, z, _l, s) = (x as f32, z as f32, lod_level as f32, step as f32);
-                    let hs = s / 2.0; // half-step
-
-                    // TODO
-                    let l = || rand::thread_rng().gen_range(0.0..1.0);
+                    let (x, z, l, s) = (x as f32, z as f32, lod_level as f32, step as f32);
 
                     // y is set to LOD level (`l`) for use in the shader
-                    //        x        y   z
-                    let a = [ x,       l(),  z     ];
-                    let c = [ x + s,   l(),  z     ];
-                    let g = [ x,       l(),  z + s ];
-                    let i = [ x + s,   l(),  z + s ];
+                    //        x       y   z
+                    let a = [ x,      l,  z     ];
+                    let c = [ x + s,  l,  z     ];
+                    let g = [ x,      l,  z + s ];
+                    let i = [ x + s,  l,  z + s ];
 
-                    let b = [ x + hs,  l(),  z      ];
-                    let d = [ x,       l(),  z + hs ];
-                    let e = [ x + hs,  l(),  z + hs ];
-                    let f = [ x + s,   l(),  z + hs ];
-                    let h = [ x + hs,  l(),  z + s  ];
-
-                    let (x, z) = (x as isize, z as isize);
-
-                    // Stitch the border into the next level
-                    if x == -lod_radius {
-                        //   A-----B-----C
-                        //   | \   |   / |
-                        //   |   \ | /   |
-                        //   |     E-----F
+                    if lod_level > 0 {
+                        // Tessellate the square as such:
+                        //   A-----B-----C   ^     ^
+                        //   | \   |   / |   |   half-step
+                        //   |   \ | /   |         |
+                        //   D-----E-----F  step   v
                         //   |   / | \   |
-                        //   | /   |   \ |
-                        //   G-----H-----I
-                        builder.push_triangle([e, a, g]);
-                    } else {
-                        builder.push_triangle([e, a, d]);
-                        builder.push_triangle([e, d, g]);
-                    }
+                        //   | /   |   \ |   |
+                        //   G-----H-----I   v
+                        //   <-   step  ->
 
-                    if z == lod_radius - 1 {
-                        builder.push_triangle([e, g, i]);
-                    } else {
-                        builder.push_triangle([e, g, h]);
-                        builder.push_triangle([e, h, i]);
-                    }
+                        let hs = s / 2.0; // half-step
 
-                    if x == lod_radius - 1 {
-                        builder.push_triangle([e, i, c]);
-                    } else {
-                        builder.push_triangle([e, i, f]);
-                        builder.push_triangle([e, f, c]);
-                    }
+                        // y is set to LOD level (`l`) for use in the shader
+                        //        x        y   z
+                        let b = [ x + hs,  l,  z      ];
+                        let d = [ x,       l,  z + hs ];
+                        let e = [ x + hs,  l,  z + hs ];
+                        let f = [ x + s,   l,  z + hs ];
+                        let h = [ x + hs,  l,  z + s  ];
 
-                    if z == -lod_radius {
-                        builder.push_triangle([e, c, a]);
+                        let (x, z) = (x as isize, z as isize);
+
+                        // Stitch the border into the next level
+                        if x == -lod_radius {
+                            //   A-----B-----C
+                            //   | \   |   / |
+                            //   |   \ | /   |
+                            //   |     E-----F
+                            //   |   / | \   |
+                            //   | /   |   \ |
+                            //   G-----H-----I
+                            builder.push_triangle([e, a, g]);
+                        } else {
+                            builder.push_triangle([e, a, d]);
+                            builder.push_triangle([e, d, g]);
+                        }
+
+                        if z == lod_radius - 1 {
+                            builder.push_triangle([e, g, i]);
+                        } else {
+                            builder.push_triangle([e, g, h]);
+                            builder.push_triangle([e, h, i]);
+                        }
+
+                        if x == lod_radius - 1 {
+                            builder.push_triangle([e, i, c]);
+                        } else {
+                            builder.push_triangle([e, i, f]);
+                            builder.push_triangle([e, f, c]);
+                        }
+
+                        if z == -lod_radius {
+                            builder.push_triangle([e, c, a]);
+                        } else {
+                            builder.push_triangle([e, c, b]);
+                            builder.push_triangle([e, b, a]);
+                        }
                     } else {
-                        builder.push_triangle([e, c, b]);
-                        builder.push_triangle([e, b, a]);
+                        builder.push_triangle([i, a, g]);
+                        builder.push_triangle([i, c, a]);
+
+                        // TODO LOD stitch
                     }
                 }
             }
         }
-
     }
 
     builder.build()
