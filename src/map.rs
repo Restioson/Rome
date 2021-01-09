@@ -43,9 +43,6 @@ use itertools::Itertools;
 use byteorder::{NativeEndian, WriteBytesExt};
 use std::cmp;
 use ordered_float::OrderedFloat;
-use image::{Rgb, Rgba};
-use bevy::render::pipeline::PrimitiveTopology;
-use bevy::render::mesh::Indices;
 
 pub mod mesh;
 pub mod shader;
@@ -63,10 +60,6 @@ impl Plugin for RomeMapPlugin {
                 shader::update_time.system(),
             );
     }
-}
-
-fn translate_heightmap() {
-
 }
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -148,7 +141,6 @@ impl HeightMap {
         let top_left = self.sample_vec3(x, y, height_factor);
         let bottom_left = self.sample_vec3(x, y + 1, height_factor);
         let bottom_right = self.sample_vec3(x + 1, y + 1, height_factor);
-        let top_right = self.sample_vec3(x + 1, y, height_factor);
 
         // let n1 = (bottom_left - top_left).cross(bottom_right - top_left);
         // let n2 = (bottom_left - top_right).cross(bottom_right - top_right);
@@ -158,8 +150,8 @@ impl HeightMap {
     }
 }
 
-impl Into<(Texture, Mesh)> for &HeightMap {
-    fn into(self) -> (Texture, Mesh) {
+impl Into<Texture> for &HeightMap {
+    fn into(self) -> Texture {
         const HEIGHT_BITS: u8 = 8;
         const LIGHT_BITS: u8 = 16 - HEIGHT_BITS;
         const MAX_LIGHT_LEVEL: u8 = ((1u16 << LIGHT_BITS) - 1) as u8;
@@ -179,55 +171,19 @@ impl Into<(Texture, Mesh)> for &HeightMap {
 
         let mut bytes = Vec::with_capacity(1024 * 1024 * 2);
 
-        let mut normal_image = image::ImageBuffer::new(1024, 1024);
-        let mut brightness_image = image::ImageBuffer::new(1024, 1024);
-        let mut heightmap_image = image::ImageBuffer::new(1024, 1024);
-        let mut line_indices = Vec::new();
-        let mut line_coords = Vec::new();
-        let mut ctr = 0;
-
         for (y, x) in (0..1024).cartesian_product(0..1024) {
             let normal = self.sample_normal(x, y, factor);
 
             let diffuse = cmp::max(OrderedFloat(normal.dot(light_pos)), OrderedFloat(0.0));
             let brightness = cmp::min(OrderedFloat(1.0), diffuse + AMBIENT_LIGHT_STRENGTH);
 
-            if brightness.0 > 1.0 {
-                dbg!(brightness);
-            }
-
             let brightness_level = (brightness.0 as f32 * MAX_LIGHT_LEVEL as f32).round() as u16;
             let height = (self.sample_height(x, y) as f32 * factor).round() as u16;
-
-            // if height > 0 {
-            //     println!("{}", brightness_level);
-            // }
-
-            let b = (brightness.0 * 255.0) as u8;
-            let p = |c| ((c + 1.0) / 2.0 * 255.0) as u8;
-            let h = (height as f32 * 255.0) as u8;
-            normal_image.put_pixel(x as u32, y as u32, Rgb([p(normal.x), p(normal.y), p(normal.z)]));
-            brightness_image.put_pixel(x as u32, y as u32, Rgba([b, b, b, 255]));
-            heightmap_image.put_pixel(x as u32, y as u32, Rgba([h, h, h, 255]));
-
-            let line_start = Vec3::new(x as f32 + 0.5, 0.0, y as f32 + 0.5);
-            let line_end = line_start + (normal / 2.0);
-
-            line_coords.push([line_start.x, line_start.y, line_start.z]);
-            line_indices.push(ctr);
-            ctr += 1;
-            line_coords.push([line_end.x, line_end.y, line_end.z]);
-            line_indices.push(ctr);
-            ctr += 1;
 
             let packed = brightness_level | (height << HEIGHT_BITS);
             bytes.write_u16::<NativeEndian>(packed).unwrap();
         }
-
-        normal_image.save("normalmap.png").unwrap();
-        brightness_image.save("brightnessmap.png").unwrap();
-
-        let texture = Texture {
+        Texture {
             data: bytes,
             size: Extent3d::new(1024, 1024, 1),
             format: TextureFormat::R16Uint,
@@ -238,13 +194,7 @@ impl Into<(Texture, Mesh)> for &HeightMap {
                 address_mode_w: AddressMode::Repeat,
                 ..Default::default()
             },
-        };
-
-        let mut mesh = Mesh::new(PrimitiveTopology::LineList);
-        mesh.set_attribute(Mesh::ATTRIBUTE_POSITION, line_coords);
-        mesh.set_indices(Some(Indices::U32(line_indices)));
-
-        (texture, mesh)
+        }
     }
 }
 

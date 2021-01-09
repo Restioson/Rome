@@ -5,8 +5,6 @@ use crate::{AppState, RomeAssets, STATE_STAGE};
 use bevy::prelude::*;
 use bevy::render::texture::{AddressMode, SamplerDescriptor, FilterMode};
 use bevy::tasks::AsyncComputeTaskPool;
-use bevy::render::pipeline::{PipelineDescriptor, RenderPipeline};
-use bevy::render::shader::{ShaderStages, ShaderStage};
 
 pub struct LoadRomeAssets;
 
@@ -28,7 +26,6 @@ struct LoadingAssets {
     forest: Option<Handle<Texture>>,
     sand: Option<Handle<Texture>>,
     heightmap: Option<Handle<Texture>>,
-    normal_mesh: Option<Handle<Mesh>>,
 }
 
 /// Assets loaded from disk
@@ -36,7 +33,6 @@ struct LoadedAssets {
     forest: Handle<Texture>,
     sand: Handle<Texture>,
     heightmap: Handle<Texture>,
-    normal_mesh: Handle<Mesh>,
 }
 
 impl LoadingAssets {
@@ -45,13 +41,11 @@ impl LoadingAssets {
             self.forest.as_ref(),
             self.sand.as_ref(),
             self.heightmap.as_ref(),
-            self.normal_mesh.as_ref()
         ) {
-            (Some(forest), Some(sand), Some(heightmap), Some(mesh)) => Some(LoadedAssets {
-                forest: forest.clone(),
-                sand: sand.clone(),
-                heightmap: heightmap.clone(),
-                normal_mesh: mesh.clone()
+            (Some(forest), Some(sand), Some(heightmap)) => Some(LoadedAssets {
+                forest: Handle::clone(forest),
+                sand: Handle::clone(sand),
+                heightmap: Handle::clone(heightmap),
             }),
             _ => None,
         }
@@ -72,8 +66,6 @@ fn loading(
     mut loading: ResMut<LoadingAssets>,
     mut state: ResMut<State<AppState>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut pipelines: ResMut<Assets<PipelineDescriptor>>,
-    mut shaders: ResMut<Assets<Shader>>,
     asset_server: Res<AssetServer>,
 ) {
     fn setup_texture(s: &mut SamplerDescriptor) {
@@ -108,25 +100,19 @@ fn loading(
         .get("map/heightmap/map.mapdat")
         .filter(|_| loading.heightmap.is_none())
     {
-        let (texture, normals) = map.into();
-        loading.heightmap = Some(textures.add(texture));
-        loading.normal_mesh = Some(meshes.add(normals));
+        // TODO in task pool
+        loading.heightmap = Some(textures.add( map.into()));
     }
 
     if let Some(LoadedAssets {
         forest,
         sand,
         heightmap,
-        normal_mesh
     }) = loading.all_loaded()
     {
         let map_material = materials.add(MapMaterial { forest, sand, heightmap });
         let clipmap_mesh = meshes.add(build_mesh(4)); // TODO in task pool
-        commands.insert_resource(RomeAssets {
-            map_material,
-            clipmap_mesh,
-            normal_mesh
-        });
+        commands.insert_resource(RomeAssets { map_material, clipmap_mesh });
 
         state.set_next(AppState::InGame).unwrap();
         // TODO remove loading_state resource
