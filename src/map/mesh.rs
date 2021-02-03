@@ -33,7 +33,7 @@ pub fn build_mesh(lod_levels: u8) -> Mesh {
     let g = 128 / 2; // TODO ?
     let pad = 1; // TODO
 
-    for lod_level in 0..lod_levels {
+    for lod_level in  0..lod_levels {
         let step: usize = 1 << (lod_level as usize);
         let half_step: isize = (step >> 1) as isize;
         // Radius that the LOD takes up
@@ -91,14 +91,14 @@ pub fn build_mesh(lod_levels: u8) -> Mesh {
                             builder.push_triangle([e, d, g]);
                         }
 
-                        if z == lod_radius - 1 {
+                        if z == lod_radius - step as isize {
                             builder.push_triangle([e, g, i]);
                         } else {
                             builder.push_triangle([e, g, h]);
                             builder.push_triangle([e, h, i]);
                         }
 
-                        if x == lod_radius - 1 {
+                        if x == lod_radius - step as isize {
                             builder.push_triangle([e, i, c]);
                         } else {
                             builder.push_triangle([e, i, f]);

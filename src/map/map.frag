@@ -15,17 +15,19 @@ layout(set = 1, binding = 0) uniform Transform {
 };
 
 const vec3 LIGHT_VECTOR = normalize(vec3(1.0, 0.5, 0.3));
+const uint HEIGHT_BITS = 11;
+const uint LIGHT_BITS = 16 - HEIGHT_BITS;
 
-vec3 sample_grass(vec2 coord) {
-    return texture(sampler2D(MapMaterial_forest, MapMaterial_forest_sampler), coord * 0.05).rgb;
+vec4 sample_grass(vec2 coord) {
+    return texture(sampler2D(MapMaterial_forest, MapMaterial_forest_sampler), coord * 0.05);
 }
 
 void main() {
     uint packed = texelFetch(usampler2D(MapMaterial_heightmap, MapMaterial_heightmap_sampler), ivec2(world_space_position.xz), 0).r;
-    uint brightness_level = packed & 0xFF;
-    float brightness = float(brightness_level) / 255.0;
+    uint brightness_level = packed & ((1 << LIGHT_BITS) - 1);
+    float brightness = float(brightness_level) / ((1 << LIGHT_BITS) - 1);
 
-    vec3 color = sample_grass(world_space_position.xz);
+    vec4 color = sample_grass(world_space_position.xz);
     color.rgb *= brightness;
 
     vec4 lod_color;
@@ -40,6 +42,5 @@ void main() {
         lod_color = vec4(1.0, 0.0, 1.0, 1.0);
     }
 
-//    o_Target = mix(vec4(color, 1.0), lod_color, 0.1);
-    o_Target = vec4(color, 1.0);
+    o_Target = mix(color, lod_color, 0.1);
 }

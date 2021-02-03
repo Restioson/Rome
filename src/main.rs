@@ -45,11 +45,12 @@ pub struct RomeAssets {
     clipmap_mesh: Handle<Mesh>,
 }
 
-fn fps_counter_text_update(diagnostics: Res<Diagnostics>, mut query: Query<&mut Text>) {
+fn fps_counter_text_update(diagnostics: Res<Diagnostics>, mut query: Query<&mut Text>, query2: Query<&goshawk::RtsCamera>) {
+    let xyz = query2.iter().next().map(|opt| opt.looking_at);
     for mut text in query.iter_mut() {
         if let (Some(fps), Some(frame_time)) = (diagnostics.get(FrameTimeDiagnosticsPlugin::FPS), diagnostics.get(FrameTimeDiagnosticsPlugin::FRAME_TIME)) {
-            if let (Some(average_fps), Some(average_frame_time)) = (fps.average(), frame_time.average()) {
-                text.value = format!("FPS: {:.0} Frame time: {:.2}ms", average_fps.round(), average_frame_time * 1000.0).into();
+            if let (Some(average_fps), Some(average_frame_time), Some(xyz)) = (fps.average(), frame_time.average(), xyz) {
+                text.value = format!("FPS: {:.0}. Frame time: {:.2}ms. XZ: ({:.2}; {:.2})", average_fps.round(), average_frame_time * 1000.0, xyz.x, xyz.z).into();
             }
         }
     }
@@ -75,14 +76,14 @@ fn start_game(
             max_velocity: 80.0,
             idle_deceleration: 400.0,
             angle_change_zone: 75.0..=200.0,
-            distance_range: 50.0..=300.0,
+            distance_range: 0.0..=300.0,
             ..Default::default()
         })
         .with(PanSettings {
             mouse_accel: 50.0,
             keyboard_accel: 40.0,
             idle_deceleration: 50.0,
-            max_speed: 20.0,
+            max_speed: 1.0,
             pan_speed_zoom_factor_range: 1.0..=4.0,
             ..Default::default()
         })
@@ -90,7 +91,7 @@ fn start_game(
             builder.spawn(MeshBundle {
                 mesh: assets.clipmap_mesh.clone(),
                 render_pipelines: map::shader::render_pipelines(),
-                transform: Transform::from_translation(Vec3::default()),
+                transform: Transform::from_translation(Vec3::splat(0.5)),
                 ..Default::default()
             })
             .with(assets.map_material.clone());

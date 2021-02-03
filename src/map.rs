@@ -111,7 +111,7 @@ fn clamp(a: i32, max: u32) -> u32 {
     cmp::max(cmp::min(a, max as i32), 0) as u32
 }
 
-const F: f32 = 0.1;
+const F: f32 = 0.01;
 
 impl HeightMap {
     fn sample_height(&self, x: i32, y: i32) -> u16 {
@@ -128,31 +128,17 @@ impl HeightMap {
     }
 
     fn sample_normal(&self, x: i32, y: i32, height_factor: f32) -> Vec3 {
-        // let top_left = self.sample_height(x - 1, y - 1) as f32 * F;
-        // let top_right = self.sample_height(x + 1, y - 1) as f32 * F;
-        // let bottom_left = self.sample_height(x - 1, y + 1) as f32 * F;
-        // let bottom_right = self.sample_height(x + 1, y + 1) as f32 * F;
-        //
-        // // Normal
-        // let normal_1 = Vec3::new(top_left - top_right , 2.0, bottom_left - top_left).normalize();
-        // let normal_2 = Vec3::new(bottom_left - bottom_right, 2.0, top_right - bottom_right).normalize();
-        // (normal_1 + normal_2).normalize()
-
         let top_left = self.sample_vec3(x, y, height_factor);
         let bottom_left = self.sample_vec3(x, y + 1, height_factor);
         let bottom_right = self.sample_vec3(x + 1, y + 1, height_factor);
 
-        // let n1 = (bottom_left - top_left).cross(bottom_right - top_left);
-        // let n2 = (bottom_left - top_right).cross(bottom_right - top_right);
-        //
-        // (n1 + n2).normalize()
         (bottom_right - bottom_left).cross(top_left - bottom_left).normalize()
     }
 }
 
 impl Into<Texture> for &HeightMap {
     fn into(self) -> Texture {
-        const HEIGHT_BITS: u8 = 8;
+        const HEIGHT_BITS: u8 = 11;
         const LIGHT_BITS: u8 = 16 - HEIGHT_BITS;
         const MAX_LIGHT_LEVEL: u8 = ((1u16 << LIGHT_BITS) - 1) as u8;
         const AMBIENT_LIGHT_STRENGTH: OrderedFloat<f32> = OrderedFloat(0.1);
@@ -180,9 +166,10 @@ impl Into<Texture> for &HeightMap {
             let brightness_level = (brightness.0 as f32 * MAX_LIGHT_LEVEL as f32).round() as u16;
             let height = (self.sample_height(x, y) as f32 * factor).round() as u16;
 
-            let packed = brightness_level | (height << HEIGHT_BITS);
+            let packed = brightness_level | (height << LIGHT_BITS);
             bytes.write_u16::<NativeEndian>(packed).unwrap();
         }
+
         Texture {
             data: bytes,
             size: Extent3d::new(1024, 1024, 1),
@@ -197,10 +184,3 @@ impl Into<Texture> for &HeightMap {
         }
     }
 }
-
-//
-// impl From<rome_map::Map> for MapTextures {
-//     fn from(map: &Map) -> Self {
-//
-//     }
-// }
