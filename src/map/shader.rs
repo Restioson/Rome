@@ -6,8 +6,8 @@ use bevy::render::renderer::RenderResources;
 use bevy::render::shader::{ShaderStage, ShaderStages};
 use once_cell::sync::OnceCell;
 
-pub const VERTEX_SHADER: &str = include_str!("map.vert");
-pub const FRAGMENT_SHADER: &str = include_str!("map.frag");
+pub const VERTEX_SHADER: &str = include_str!("../../assets/map/shader/map.vert");
+pub const FRAGMENT_SHADER: &str = include_str!("../../assets/map/shader/map.frag");
 
 static PIPELINE: OnceCell<Handle<PipelineDescriptor>> = OnceCell::new();
 

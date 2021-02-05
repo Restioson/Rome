@@ -28,7 +28,6 @@
 //! OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 //! SOFTWARE.
 //! ```
-//!
 use crate::{AppState, STATE_STAGE};
 use bevy::app::{AppBuilder, Plugin};
 use bevy::asset::{AssetLoader, LoadContext, LoadedAsset};
@@ -43,6 +42,7 @@ use itertools::Itertools;
 use byteorder::{NativeEndian, WriteBytesExt};
 use std::cmp;
 use ordered_float::OrderedFloat;
+use crate::map::shader::MapMaterial;
 
 pub mod mesh;
 pub mod shader;
@@ -52,13 +52,26 @@ pub struct RomeMapPlugin;
 impl Plugin for RomeMapPlugin {
     fn build(&self, app: &mut AppBuilder) {
         app.add_asset::<HeightMap>()
-            .add_asset::<shader::MapMaterial>()
+            .add_asset::<MapMaterial>()
             .add_startup_system(shader::setup.system())
             .on_state_update(
                 STATE_STAGE,
                 AppState::InGame,
                 shader::update_time.system(),
+            )
+            .on_state_update(
+                STATE_STAGE,
+                AppState::InGame,
+                translate_meshes.system(),
             );
+    }
+}
+
+fn translate_meshes(camera: Query<&goshawk::RtsCamera>, mut meshes: Query<(&mut Transform, &Handle<MapMaterial>)>) {
+    for (mut mesh, _material) in meshes.iter_mut() {
+        if let Some(camera) = camera.iter().next() {
+            mesh.translation = camera.looking_at;
+        }
     }
 }
 
@@ -111,20 +124,21 @@ fn clamp(a: i32, max: u32) -> u32 {
     cmp::max(cmp::min(a, max as i32), 0) as u32
 }
 
-const F: f32 = 0.01;
+const Y_SCALE: f32 = 0.1;
+const XZ_SCALE: f32 = 1.0 / 8.0;
 
 impl HeightMap {
-    fn sample_height(&self, x: i32, y: i32) -> u16 {
+    fn sample_height_water(&self, x: i32, y: i32) -> (u16, bool) {
         let px = self.0.get(clamp(x, self.0.width as u32), clamp(y, self.0.height as u32));
-        if px.is_water || px.height.0 < 0 {
-            0
+        if px.is_water {
+            (0, true)
         } else {
-            px.height.0 as u16
+            (i16::max(0, px.height.0) as u16, false)
         }
     }
 
     fn sample_vec3(&self, x: i32, y: i32, height_factor: f32) -> Vec3 {
-        Vec3::new(x as f32, self.sample_height(x, y) as f32 * height_factor * F, y as f32)
+        Vec3::new(x as f32, self.sample_height_water(x, y).0 as f32 * height_factor * Y_SCALE * XZ_SCALE, y as f32)
     }
 
     fn sample_normal(&self, x: i32, y: i32, height_factor: f32) -> Vec3 {
@@ -138,12 +152,12 @@ impl HeightMap {
 
 impl Into<Texture> for &HeightMap {
     fn into(self) -> Texture {
-        const HEIGHT_BITS: u8 = 11;
-        const LIGHT_BITS: u8 = 16 - HEIGHT_BITS;
+        const HEIGHT_BITS: u8 = 9;
+        const LIGHT_BITS: u8 = 15 - HEIGHT_BITS;
         const MAX_LIGHT_LEVEL: u8 = ((1u16 << LIGHT_BITS) - 1) as u8;
         const AMBIENT_LIGHT_STRENGTH: OrderedFloat<f32> = OrderedFloat(0.1);
 
-        let light_pos = Vec3::new(-1.0, 0.5, -0.3).normalize();
+        let light_pos = Vec3::new(-1.0, 0.2, -0.3).normalize();
 
         let mut max = 0;
         for (y, x) in (0..self.0.height).cartesian_product(0..self.0.width) {
@@ -164,9 +178,10 @@ impl Into<Texture> for &HeightMap {
             let brightness = cmp::min(OrderedFloat(1.0), diffuse + AMBIENT_LIGHT_STRENGTH);
 
             let brightness_level = (brightness.0 as f32 * MAX_LIGHT_LEVEL as f32).round() as u16;
-            let height = (self.sample_height(x, y) as f32 * factor).round() as u16;
+            let (height, water) = self.sample_height_water(x, y);
+            let height = (height as f32 * factor).round() as u16;
 
-            let packed = brightness_level | (height << LIGHT_BITS);
+            let packed = brightness_level | (height << LIGHT_BITS) | ((water as u16) << 15);
             bytes.write_u16::<NativeEndian>(packed).unwrap();
         }
 

@@ -4,7 +4,7 @@ use bevy::diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin};
 use crate::map::shader::MapMaterial;
 use crate::loading::LoadRomeAssets;
 use crate::map::RomeMapPlugin;
-use goshawk::{RtsCamera, ZoomSettings, PanSettings};
+use goshawk::{RtsCamera, ZoomSettings, PanSettings, TurnSettings};
 
 mod loading;
 mod map;
@@ -47,10 +47,11 @@ pub struct RomeAssets {
 
 fn fps_counter_text_update(diagnostics: Res<Diagnostics>, mut query: Query<&mut Text>, query2: Query<&goshawk::RtsCamera>) {
     let xyz = query2.iter().next().map(|opt| opt.looking_at);
+    let dist = query2.iter().next().map(|opt| opt.zoom_distance);
     for mut text in query.iter_mut() {
         if let (Some(fps), Some(frame_time)) = (diagnostics.get(FrameTimeDiagnosticsPlugin::FPS), diagnostics.get(FrameTimeDiagnosticsPlugin::FRAME_TIME)) {
-            if let (Some(average_fps), Some(average_frame_time), Some(xyz)) = (fps.average(), frame_time.average(), xyz) {
-                text.value = format!("FPS: {:.0}. Frame time: {:.2}ms. XZ: ({:.2}; {:.2})", average_fps.round(), average_frame_time * 1000.0, xyz.x, xyz.z).into();
+            if let (Some(average_fps), Some(average_frame_time), Some(xyz), Some(dist)) = (fps.average(), frame_time.average(), xyz, dist) {
+                text.value = format!("FPS: {:.0}. Frame time: {:.2}ms. XZ: ({:.2}; {:.2}). Zoom: {:.2}", average_fps.round(), average_frame_time * 1000.0, xyz.x, xyz.z, dist).into();
             }
         }
     }
@@ -72,30 +73,35 @@ fn start_game(
             ..Default::default()
         })
         .with(ZoomSettings {
-            scroll_accel: 20.0,
-            max_velocity: 80.0,
-            idle_deceleration: 400.0,
-            angle_change_zone: 75.0..=200.0,
-            distance_range: 0.0..=300.0,
+            angle_range: 0.5705693..=0.7637539,
+            scroll_accel: 25.0,
+            max_velocity: 70.0,
+            idle_deceleration: 200.0,
+            angle_change_zone: 80.0..=100.0,
+            distance_range: 75.0..=200.0,
             ..Default::default()
         })
         .with(PanSettings {
-            mouse_accel: 50.0,
-            keyboard_accel: 40.0,
-            idle_deceleration: 50.0,
-            max_speed: 1.0,
+            mouse_accel: 200.0,
+            keyboard_accel: 160.0,
+            idle_deceleration: 200.0,
+            max_speed: 4.0,
             pan_speed_zoom_factor_range: 1.0..=4.0,
             ..Default::default()
         })
-        .with_children(|builder| {
-            builder.spawn(MeshBundle {
-                mesh: assets.clipmap_mesh.clone(),
-                render_pipelines: map::shader::render_pipelines(),
-                transform: Transform::from_translation(Vec3::splat(0.5)),
-                ..Default::default()
-            })
-            .with(assets.map_material.clone());
+        .with(TurnSettings {
+            mouse_turn_margin: 0.0,
+            mouse_accel: 0.0,
+            keyboard_accel: 0.0,
+            ..Default::default()
         })
+        .spawn(MeshBundle {
+            mesh: assets.clipmap_mesh.clone(),
+            render_pipelines: map::shader::render_pipelines(),
+            transform: Transform::from_translation(Vec3::splat(0.5)),
+            ..Default::default()
+        })
+        .with(assets.map_material.clone())
         .spawn(CameraUiBundle::default())
         .spawn(TextBundle {
             style: Style {

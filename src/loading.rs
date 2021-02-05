@@ -111,7 +111,7 @@ fn loading(
     }) = loading.all_loaded()
     {
         let map_material = materials.add(MapMaterial { forest, sand, heightmap });
-        let clipmap_mesh = meshes.add(build_mesh(4)); // TODO in task pool
+        let clipmap_mesh = meshes.add(build_mesh(6)); // TODO in task pool
         commands.insert_resource(RomeAssets { map_material, clipmap_mesh });
 
         state.set_next(AppState::InGame).unwrap();

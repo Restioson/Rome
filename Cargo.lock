@@ -2008,9 +2008,9 @@ dependencies = [
 
 [[package]]
 name = "goshawk"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d26fb735d8a4206ee1b6a9743ee56434b6b84c479951e419d8a70b7b2085635"
+checksum = "a0001dde513518caa8da3157d0d9196f5f7da6cd7c9d4c6d65553f0ba358f765"
 dependencies = [
  "bevy",
 ]
