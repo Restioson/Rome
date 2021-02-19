@@ -15,7 +15,7 @@ layout(set = 1, binding = 0) uniform Transform {
 };
 
 const vec3 LIGHT_VECTOR = normalize(vec3(1.0, 0.5, 0.3));
-const uint HEIGHT_BITS = 9;
+const uint HEIGHT_BITS = 8;
 const uint LIGHT_BITS = 15 - HEIGHT_BITS;
 const uint LIGHT_MASK = (1 << LIGHT_BITS) - 1;
 const float SQRT_2 = sqrt(2.0);
@@ -97,7 +97,7 @@ void main() {
 //    vec4 lod_color;
 //
 //    if (lod == 0) {
-//        lod_color = vec4(1.0, 0.0, 0.0, 1.0);
+//        lod_color = color;
 //    } else if (lod == 1) {
 //        lod_color = vec4(1.0, 1.0, 0.0, 1.0);
 //    } else if (lod == 2) {
@@ -110,5 +110,5 @@ void main() {
 //        lod_color = vec4(0.5, 0.0, 0.5, 1.0);
 //    }
 //
-//    o_Target = mix(color, lod_color, 0.1);
+//    o_Target = mix(color, lod_color, 0.05);
 }

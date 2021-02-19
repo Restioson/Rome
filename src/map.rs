@@ -43,9 +43,11 @@ use byteorder::{NativeEndian, WriteBytesExt};
 use std::cmp;
 use ordered_float::OrderedFloat;
 use crate::map::shader::MapMaterial;
+use crate::map::mipmap::HeightmapMipMap;
 
 pub mod mesh;
 pub mod shader;
+pub mod mipmap;
 
 pub struct RomeMapPlugin;
 
@@ -100,6 +102,7 @@ impl AssetLoader for HeightMapLoader {
                     println!("Deserializing");
                     let map: rome_map::Map = bincode::deserialize(&unzipped).unwrap();
 
+                    dbg!(map.height, map.width);
                     println!("Done loading heightmap");
 
                     HeightMap(map)
@@ -116,7 +119,7 @@ impl AssetLoader for HeightMapLoader {
     }
 }
 
-#[derive(TypeUuid)]
+#[derive(TypeUuid, Clone)]
 #[uuid = "7b7c08b3-986e-49d8-85da-107024f177f1"]
 pub struct HeightMap(pub rome_map::Map);
 
@@ -124,7 +127,7 @@ fn clamp(a: i32, max: u32) -> u32 {
     cmp::max(cmp::min(a, max as i32), 0) as u32
 }
 
-const Y_SCALE: f32 = 0.1;
+const Y_SCALE: f32 = 0.2;
 const XZ_SCALE: f32 = 1.0 / 8.0;
 
 impl HeightMap {
@@ -150,9 +153,9 @@ impl HeightMap {
     }
 }
 
-impl Into<Texture> for &HeightMap {
-    fn into(self) -> Texture {
-        const HEIGHT_BITS: u8 = 9;
+impl Into<(Texture, u16)> for &HeightMap {
+    fn into(self) -> (Texture, u16) {
+        const HEIGHT_BITS: u8 = 8;
         const LIGHT_BITS: u8 = 15 - HEIGHT_BITS;
         const MAX_LIGHT_LEVEL: u8 = ((1u16 << LIGHT_BITS) - 1) as u8;
         const AMBIENT_LIGHT_STRENGTH: OrderedFloat<f32> = OrderedFloat(0.1);
@@ -169,9 +172,9 @@ impl Into<Texture> for &HeightMap {
 
         let factor = ((1 << HEIGHT_BITS) - 1) as f32 / max as f32;
 
-        let mut bytes = Vec::with_capacity(1024 * 1024 * 2);
+        let mut bytes = Vec::with_capacity(self.0.height * self.0.width * 2);
 
-        for (y, x) in (0..1024).cartesian_product(0..1024) {
+        for (y, x) in (0..(self.0.height as i32)).cartesian_product(0..(self.0.width as i32)) {
             let normal = self.sample_normal(x, y, factor);
 
             let diffuse = cmp::max(OrderedFloat(normal.dot(light_pos)), OrderedFloat(0.0));
@@ -185,10 +188,38 @@ impl Into<Texture> for &HeightMap {
             bytes.write_u16::<NativeEndian>(packed).unwrap();
         }
 
+        let texture = Texture {
+            data: bytes,
+            size: Extent3d::new(self.0.width as u32, self.0.height as u32, 1),
+            format: TextureFormat::R16Uint,
+            dimension: TextureDimension::D2,
+            sampler: SamplerDescriptor {
+                address_mode_u: AddressMode::Repeat,
+                address_mode_v: AddressMode::Repeat,
+                address_mode_w: AddressMode::Repeat,
+                ..Default::default()
+            },
+        };
+
+        (texture, max as u16)
+    }
+}
+
+impl HeightmapMipMap {
+    pub fn to_texture(&self, max_y: u16) -> Texture {
+        const HEIGHT_BITS: u8 = 8;
+
+        let factor = ((1 << HEIGHT_BITS) - 1) as f32 / max_y as f32;
+        let mut bytes = Vec::with_capacity(self.height * self.width);
+
+        for (y, x) in (0..self.height).cartesian_product(0..self.width) {
+            bytes.write_u8((self.get(x as u32, y as u32).0 as f32 * factor) as u8).unwrap();
+        }
+
         Texture {
             data: bytes,
-            size: Extent3d::new(1024, 1024, 1),
-            format: TextureFormat::R16Uint,
+            size: Extent3d::new(self.width as u32, self.height as u32, 1),
+            format: TextureFormat::R8Uint,
             dimension: TextureDimension::D2,
             sampler: SamplerDescriptor {
                 address_mode_u: AddressMode::Repeat,

@@ -17,6 +17,7 @@ pub struct MapMaterial {
     pub forest: Handle<Texture>,
     pub sand: Handle<Texture>,
     pub heightmap: Handle<Texture>,
+    pub mipmap: Handle<Texture>,
 }
 
 #[derive(RenderResources, Default)]

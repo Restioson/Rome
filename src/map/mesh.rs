@@ -30,7 +30,7 @@ pub fn build_mesh(lod_levels: u8) -> Mesh {
     let mut builder = MeshBuilder::default();
 
     // How many grid cells to use most-detailed LOD for, divided by two
-    let g = 128 / 2; // TODO ?
+    let g = 512 / 2; // TODO ?
     let pad = 1; // TODO
 
     for lod_level in 0..lod_levels {

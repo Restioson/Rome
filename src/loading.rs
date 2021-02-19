@@ -5,6 +5,7 @@ use crate::{AppState, RomeAssets, STATE_STAGE};
 use bevy::prelude::*;
 use bevy::render::texture::{AddressMode, SamplerDescriptor, FilterMode};
 use bevy::tasks::AsyncComputeTaskPool;
+use crate::map::mipmap::generate_mipmaps;
 
 pub struct LoadRomeAssets;
 
@@ -26,6 +27,7 @@ struct LoadingAssets {
     forest: Option<Handle<Texture>>,
     sand: Option<Handle<Texture>>,
     heightmap: Option<Handle<Texture>>,
+    raw_heightmap: Option<(Handle<HeightMap>, u16)>,
 }
 
 /// Assets loaded from disk
@@ -33,6 +35,8 @@ struct LoadedAssets {
     forest: Handle<Texture>,
     sand: Handle<Texture>,
     heightmap: Handle<Texture>,
+    raw_heightmap: Handle<HeightMap>,
+    max_y: u16,
 }
 
 impl LoadingAssets {
@@ -41,11 +45,14 @@ impl LoadingAssets {
             self.forest.as_ref(),
             self.sand.as_ref(),
             self.heightmap.as_ref(),
+            self.raw_heightmap.as_ref(),
         ) {
-            (Some(forest), Some(sand), Some(heightmap)) => Some(LoadedAssets {
+            (Some(forest), Some(sand), Some(heightmap), Some(raw_heightmap)) => Some(LoadedAssets {
                 forest: Handle::clone(forest),
                 sand: Handle::clone(sand),
                 heightmap: Handle::clone(heightmap),
+                raw_heightmap: Handle::clone(&raw_heightmap.0),
+                max_y: raw_heightmap.1,
             }),
             _ => None,
         }
@@ -61,7 +68,7 @@ fn queue_asset_load(asset_server: Res<AssetServer>) {
 fn loading(
     commands: &mut Commands,
     mut textures: ResMut<Assets<Texture>>,
-    heightmaps: Res<Assets<HeightMap>>,
+    mut heightmaps: ResMut<Assets<HeightMap>>,
     mut materials: ResMut<Assets<MapMaterial>>,
     mut loading: ResMut<LoadingAssets>,
     mut state: ResMut<State<AppState>>,
@@ -101,16 +108,30 @@ fn loading(
         .filter(|_| loading.heightmap.is_none())
     {
         // TODO in task pool
-        loading.heightmap = Some(textures.add( map.into()));
+        let (texture, max_y) = map.into();
+        loading.heightmap = Some(textures.add(texture));
+        let cloned = map.clone();
+
+        loading.raw_heightmap = Some((heightmaps.add(cloned), max_y));
     }
 
     if let Some(LoadedAssets {
         forest,
         sand,
         heightmap,
+        raw_heightmap,
+        max_y
     }) = loading.all_loaded()
     {
-        let map_material = materials.add(MapMaterial { forest, sand, heightmap });
+        let tx = (generate_mipmaps(&heightmaps.get(raw_heightmap).unwrap().0, 1)[0]).to_texture(max_y);
+        let map_material = materials.add(
+            MapMaterial {
+                forest, 
+                sand, 
+                heightmap,
+                mipmap: textures.add(tx),
+            }
+        );
         let clipmap_mesh = meshes.add(build_mesh(6)); // TODO in task pool
         commands.insert_resource(RomeAssets { map_material, clipmap_mesh });
 
