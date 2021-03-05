@@ -6,6 +6,7 @@ layout(location = 2) flat out int lod;
 
 layout(set = 2, binding = 4) uniform utexture2D MapMaterial_heightmap;
 layout(set = 2, binding = 5) uniform sampler MapMaterial_heightmap_sampler;
+// TODO more mipmap levels
 layout(set = 2, binding = 6) uniform utexture2D MapMaterial_mipmap;
 layout(set = 2, binding = 7) uniform sampler MapMaterial_mipmap_sampler;
 

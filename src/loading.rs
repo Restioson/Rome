@@ -6,6 +6,7 @@ use bevy::prelude::*;
 use bevy::render::texture::{AddressMode, SamplerDescriptor, FilterMode};
 use bevy::tasks::AsyncComputeTaskPool;
 use crate::map::mipmap::generate_mipmaps;
+use std::time::Instant;
 
 pub struct LoadRomeAssets;
 
@@ -108,7 +109,7 @@ fn loading(
         .filter(|_| loading.heightmap.is_none())
     {
         // TODO in task pool
-        let (texture, max_y) = map.into();
+        let (texture, max_y) = time("Generating heightmap texture", || map.into());
         loading.heightmap = Some(textures.add(texture));
         let cloned = map.clone();
 
@@ -123,7 +124,9 @@ fn loading(
         max_y
     }) = loading.all_loaded()
     {
-        let tx = (generate_mipmaps(&heightmaps.get(raw_heightmap).unwrap().0, 1)[0]).to_texture(max_y);
+        let mipmaps = time("Generating mipmap", move || generate_mipmaps(&heightmaps.get(raw_heightmap).unwrap().0, 1));
+        let mipmap = &mipmaps[0];
+        let tx = time("Converting mipmap to texture", || mipmap.to_texture(max_y));
         let map_material = materials.add(
             MapMaterial {
                 forest, 
@@ -132,10 +135,17 @@ fn loading(
                 mipmap: textures.add(tx),
             }
         );
-        let clipmap_mesh = meshes.add(build_mesh(6)); // TODO in task pool
+        let clipmap_mesh = meshes.add(time("Building clipmap mesh", || build_mesh(6))); // TODO in task pool
         commands.insert_resource(RomeAssets { map_material, clipmap_mesh });
 
         state.set_next(AppState::InGame).unwrap();
         // TODO remove loading_state resource
     }
+}
+
+pub fn time<F: FnOnce() -> T, T>(label: &str, f: F) -> T {
+    let now = Instant::now();
+    let ret = f();
+    eprintln!("{} took {:.2}s", label, now.elapsed().as_secs_f32());
+    ret
 }

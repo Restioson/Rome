@@ -44,6 +44,7 @@ use std::cmp;
 use ordered_float::OrderedFloat;
 use crate::map::shader::MapMaterial;
 use crate::map::mipmap::HeightmapMipMap;
+use crate::loading::time;
 
 pub mod mesh;
 pub mod shader;
@@ -93,19 +94,21 @@ impl AssetLoader for HeightMapLoader {
             // TODO no block
             let asset = self.task_pool.scope(|scope| {
                 scope.spawn(async {
-                    println!("Unzipping");
+                    time("Loading heightmap", || {
+                        println!("Unzipping");
 
-                    let mut decoder = zstd::Decoder::new(&*bytes).unwrap();
-                    let mut unzipped = Vec::new();
-                    decoder.read_to_end(&mut unzipped).unwrap();
+                        let mut decoder = zstd::Decoder::new(&*bytes).unwrap();
+                        let mut unzipped = Vec::new();
+                        decoder.read_to_end(&mut unzipped).unwrap();
 
-                    println!("Deserializing");
-                    let map: rome_map::Map = bincode::deserialize(&unzipped).unwrap();
+                        println!("Deserializing");
+                        let map: rome_map::Map = bincode::deserialize(&unzipped).unwrap();
 
-                    dbg!(map.height, map.width);
-                    println!("Done loading heightmap");
+                        dbg!(map.height, map.width);
+                        println!("Done loading heightmap");
 
-                    HeightMap(map)
+                        HeightMap(map)
+                    })
                 })
             });
 
