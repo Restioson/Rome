@@ -6,6 +6,7 @@ use crate::loading::LoadRomeAssets;
 use crate::map::{RomeMapPlugin, LIGHT_POS, LatLong};
 use goshawk::{RtsCamera, ZoomSettings, PanSettings, TurnSettings};
 use bevy::prelude::shape::Cube;
+use itertools::Itertools;
 
 mod loading;
 mod map;
@@ -74,6 +75,28 @@ fn start_game(
     let font_handle = asset_server.load("fonts/FiraMono-Medium.ttf");
     let light_pos: Vec3 = LIGHT_POS.into();
 
+    let mesh = meshes.add(Mesh::from(Cube::new(5.0)));
+    let material = materials.add(StandardMaterial {
+        albedo: Color::BEIGE,
+        ..Default::default()
+    });
+
+    let (mesh_clone, material_clone) = (mesh.clone(), material.clone());
+
+    let intervals = (0..=1000).step_by(50);
+
+    commands.spawn_batch(
+        intervals
+            .clone()
+            .cartesian_product(intervals)
+            .map(move |(x, z)| PbrBundle {
+                mesh: mesh.clone(),
+                material: material.clone(),
+                transform: Transform::from_translation(Vec3::new(x as f32, 0.0, z as f32)),
+                ..Default::default()
+            })
+    );
+
     commands.spawn(Camera3dBundle::default())
         .with(RtsCamera {
             looking_at: italy,
@@ -111,8 +134,8 @@ fn start_game(
         })
         .with(assets.map_material.clone())
         .spawn(PbrBundle {
-            mesh: meshes.add(Cube::new(5.0).into()),
-            material: materials.add(StandardMaterial::default()),
+            mesh: mesh_clone,
+            material: material_clone,
             transform: Transform::from_translation(rome),
             ..Default::default()
         })
