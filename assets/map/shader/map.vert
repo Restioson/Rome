@@ -19,17 +19,21 @@ layout(set = 1, binding = 0) uniform Transform {
 };
 
 const float Y_SCALE = 0.2;
-const float XZ_SCALE = (1.0 / 8.0);
+const float XYZ_SCALE = 1.0 / 8.0;
 const uint HEIGHT_BITS = 8;
-const uint LIGHT_BITS = 15 - HEIGHT_BITS;
+const uint LIGHT_BITS = 8;
 const uint LOD_0_EXTENT = 512 / 2;
+
+vec2 round_to_increment(vec2 value, float increment) {
+    return round(value * (1.0 / increment)) * increment;
+}
 
 void main() {
     lod = int(Vertex_Position.y);
     float grid_size = float(1 << lod);
 
-    vec3 camera_pos = Model[3].xyz / XZ_SCALE;
-    world_space_position.xz = Vertex_Position.xz + floor(camera_pos.xz / grid_size) * grid_size;
+    vec3 camera_pos = Model[3].xyz / XYZ_SCALE;
+    world_space_position.xz = round_to_increment(Vertex_Position.xz + camera_pos.xz, grid_size);
 
     float height;
 
@@ -43,8 +47,8 @@ void main() {
         height = float(texelFetch(usampler2D(MapMaterial_mipmap, MapMaterial_mipmap_sampler), ivec2(world_space_position.xz) / 2, 0).r);
     }
 
-    vec2 transformed_pos = world_space_position.xz * XZ_SCALE;
-    float y = height * Y_SCALE * XZ_SCALE;
+    vec2 transformed_pos = world_space_position.xz * XYZ_SCALE;
+    float y = height * Y_SCALE * XYZ_SCALE;
     world_space_position.y = height;
 
     gl_Position = ViewProj * vec4(transformed_pos.x, y, transformed_pos.y, 1.0);

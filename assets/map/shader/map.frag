@@ -14,10 +14,8 @@ layout(set = 1, binding = 0) uniform Transform {
     mat4 Model;
 };
 
-const vec3 LIGHT_VECTOR = normalize(vec3(1.0, 0.5, 0.3));
-const uint HEIGHT_BITS = 8;
-const uint LIGHT_BITS = 15 - HEIGHT_BITS;
-const uint LIGHT_MASK = (1 << LIGHT_BITS) - 1;
+const uint LIGHT_BITS = 8;
+const float MAX_LIGHT_LEVEL = float((1 << LIGHT_BITS) - 1);
 const float SQRT_2 = sqrt(2.0);
 
 struct HeightmapTexel {
@@ -26,96 +24,56 @@ struct HeightmapTexel {
 };
 
 HeightmapTexel sample_heightmap(ivec2 pos) {
-    uint packed = texelFetch(usampler2D(MapMaterial_heightmap, MapMaterial_heightmap_sampler), pos, 0).r;
-    uint brightness_level = packed & LIGHT_MASK;
-    return HeightmapTexel((packed >> 15) == 1, float(brightness_level) / float(LIGHT_MASK));
-}
-
-bool is_water(ivec2 pos) {
-    uint packed = texelFetch(usampler2D(MapMaterial_heightmap, MapMaterial_heightmap_sampler), pos, 0).r;
-    uint brightness_level = packed & LIGHT_MASK;
-    return (packed >> 15) == 1;
+    uvec4 packed = texelFetch(usampler2D(MapMaterial_heightmap, MapMaterial_heightmap_sampler), pos, 0);
+    return HeightmapTexel(packed.b == 1, float(packed.g) / MAX_LIGHT_LEVEL);
 }
 
 float w(HeightmapTexel t) {
     return float(t.is_water);
 }
 
-//
-
 vec4 sample_raw_terrain_color(ivec2 heightmap_coord, vec2 texture_coord) {
-    uint packed = texelFetch(usampler2D(MapMaterial_heightmap, MapMaterial_heightmap_sampler), heightmap_coord, 0).r;
-    uint brightness_level = packed & LIGHT_MASK;
-    bool is_water = (packed >> 15) == 1;
+    uvec4 packed = texelFetch(usampler2D(MapMaterial_heightmap, MapMaterial_heightmap_sampler), heightmap_coord, 0);
+    uint terrain = packed.b;
+    float brightness = float(packed.g) / MAX_LIGHT_LEVEL;
 
-    if (is_water) {
-        return vec4(0.0, 0.0, 1.0, 1.0);
-    } else {
-        return texture(sampler2D(MapMaterial_forest, MapMaterial_forest_sampler), texture_coord * 0.005);
+    vec4 color;
+
+    if (terrain == 0) {
+        color = texture(sampler2D(MapMaterial_forest, MapMaterial_forest_sampler), texture_coord * 0.005);
+    } else if (terrain == 1) {
+        color = vec4(0.0, 0.0, 1.0, 1.0);
+    } else if (terrain == 2) {
+        color = vec4(1.0, 1.0, 0.0, 1.0);
     }
+
+    color.rgb *= brightness;
+    return color;
 }
 
-// from http://www.java-gaming.org/index.php?topic=35123.0
-vec4 cubic(float v){
-    vec4 n = vec4(1.0, 2.0, 3.0, 4.0) - v;
-    vec4 s = n * n * n;
-    float x = s.x;
-    float y = s.y - 4.0 * s.x;
-    float z = s.z - 4.0 * s.y + 6.0 * s.x;
-    float w = 6.0 - x - y - z;
-    return vec4(x, y, z, w) * (1.0/6.0);
+vec4 f(vec2 dest, vec2 ipos) {
+    return sample_raw_terrain_color(ivec2(ipos), dest);
 }
 
-vec4 sample_bicubic_terrain_color(vec2 dest_coord) {
+vec4 sample_billinear_terrain_color(vec2 dest_coord) {
     vec2 fxy = fract(dest_coord);
-    vec2 heightmap_coord = floor(dest_coord);
+    ivec2 ipos = ivec2(floor(dest_coord));
 
-    vec4 xcubic = cubic(fxy.x);
-    vec4 ycubic = cubic(fxy.y);
+    vec4 centre = sample_raw_terrain_color(ipos, dest_coord);
+    vec4 bottom = sample_raw_terrain_color(ivec2(ipos.x, ipos.y + 1), dest_coord);
+    vec4 right = sample_raw_terrain_color(ivec2(ipos.x + 1, ipos.y), dest_coord);
+    vec4 bottom_right = sample_raw_terrain_color(ivec2(ipos.x + 1, ipos.y + 1), dest_coord);
 
-    vec4 c = heightmap_coord.xxyy + vec2 (-0.5, +1.5).xyxy;
-
-    vec4 s = vec4(xcubic.xz + xcubic.yw, ycubic.xz + ycubic.yw);
-    vec4 offset = c + vec4 (xcubic.yw, ycubic.yw) / s;
-
-    vec4 sample0 = sample_raw_terrain_color(ivec2(offset.xz), dest_coord);
-    vec4 sample1 = sample_raw_terrain_color(ivec2(offset.yz), dest_coord);
-    vec4 sample2 = sample_raw_terrain_color(ivec2(offset.xw), dest_coord);
-    vec4 sample3 = sample_raw_terrain_color(ivec2(offset.yw), dest_coord);
-
-    float sx = s.x / (s.x + s.y);
-    float sy = s.z / (s.z + s.w);
-
-    return mix(mix(sample3, sample2, sx), mix(sample1, sample0, sx), sy);
+    return mix(mix(centre, right, fxy.x), mix(bottom, bottom_right, fxy.x), fxy.y);
 }
 
 void main() {
-    vec2 pos = world_space_position.xz;
-    ivec2 ipos = ivec2(floor(world_space_position.xz));
-
-    uint packed = texelFetch(usampler2D(MapMaterial_heightmap, MapMaterial_heightmap_sampler), ipos, 0).r;
-    uint brightness_level = packed & LIGHT_MASK;
-
-    HeightmapTexel centre = sample_heightmap(ipos);
-    HeightmapTexel right = sample_heightmap(ivec2(ipos.x + 1, ipos.y));
-    HeightmapTexel bottom = sample_heightmap(ivec2(ipos.x, ipos.y + 1));
-    HeightmapTexel bottom_right = sample_heightmap(ivec2(ipos.x + 1, ipos.y + 1));
-
-    float fracx = fract(pos.x);
-    float fracy = fract(pos.y);
-    float brightness = mix(mix(centre.brightness, right.brightness, fracx), mix(bottom.brightness, bottom_right.brightness, fracx), fracy);
-    vec4 color = sample_bicubic_terrain_color(pos);
-
-    color.rgb *= brightness;
-
-    o_Target = color;
+    o_Target = sample_billinear_terrain_color(world_space_position.xz);
 
 //    vec4 lod_color;
 //
-//    if (lod == 0) {
+//    if (lod < 2) {
 //        lod_color = color;
-//    } else if (lod == 1) {
-//        lod_color = vec4(1.0, 1.0, 0.0, 1.0);
 //    } else if (lod == 2) {
 //        lod_color = vec4(0.0, 0.0, 1.0, 1.0);
 //    } else if (lod == 3) {

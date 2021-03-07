@@ -3,8 +3,9 @@ use bevy::window::WindowMode;
 use bevy::diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin};
 use crate::map::shader::MapMaterial;
 use crate::loading::LoadRomeAssets;
-use crate::map::RomeMapPlugin;
+use crate::map::{RomeMapPlugin, LIGHT_POS, LatLong};
 use goshawk::{RtsCamera, ZoomSettings, PanSettings, TurnSettings};
+use bevy::prelude::shape::Cube;
 
 mod loading;
 mod map;
@@ -59,17 +60,24 @@ fn fps_counter_text_update(diagnostics: Res<Diagnostics>, mut query: Query<&mut 
 
 fn start_game(
     commands: &mut Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     assets: Res<RomeAssets>,
     asset_server: ResMut<AssetServer>
 ) {
-    // let italy = Vec3::new(599.0, 0.0, 440.0);
-    let italy = Vec3::new(0.0, 0.0, 0.0);
-    let font_handle = asset_server.load("fonts/FiraSans-SemiBold.ttf");
+    let italy = Vec3::new(745.0, 0.0, 535.0);
+    let rome = LatLong {
+        latitude: 41.9,
+        longitude: 12.49
+    }.to_tile_coord().to_world_space_0y();
+
+    let font_handle = asset_server.load("fonts/FiraMono-Medium.ttf");
+    let light_pos: Vec3 = LIGHT_POS.into();
 
     commands.spawn(Camera3dBundle::default())
         .with(RtsCamera {
             looking_at: italy,
-            zoom_distance: 100.0,
+            zoom_distance: 175.0,
             ..Default::default()
         })
         .with(ZoomSettings {
@@ -93,7 +101,6 @@ fn start_game(
             mouse_turn_margin: 0.0,
             mouse_accel: 0.0,
             keyboard_accel: 0.0,
-            
             ..Default::default()
         })
         .spawn(MeshBundle {
@@ -103,6 +110,16 @@ fn start_game(
             ..Default::default()
         })
         .with(assets.map_material.clone())
+        .spawn(PbrBundle {
+            mesh: meshes.add(Cube::new(5.0).into()),
+            material: materials.add(StandardMaterial::default()),
+            transform: Transform::from_translation(rome),
+            ..Default::default()
+        })
+        .spawn(LightBundle {
+            transform: Transform::from_translation(light_pos * 1_000_000.0),
+            ..Default::default()
+        })
         .spawn(CameraUiBundle::default())
         .spawn(TextBundle {
             style: Style {

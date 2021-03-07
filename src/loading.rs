@@ -94,7 +94,7 @@ fn loading(
         loading.sand = Some(textures.add(tx));
     }
 
-    let forest_handle = asset_server.load::<Texture, &str>("map/textures/forest2.png");
+    let forest_handle = asset_server.load::<Texture, &str>("map/textures/grassland.png");
     if let Some(tx) = textures
         .get_mut(&forest_handle)
         .filter(|_| loading.forest.is_none())

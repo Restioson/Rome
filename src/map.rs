@@ -39,7 +39,7 @@ use std::io::Read;
 use std::pin::Pin;
 use bevy::render::texture::{Extent3d, TextureFormat, AddressMode, SamplerDescriptor, TextureDimension};
 use itertools::Itertools;
-use byteorder::{NativeEndian, WriteBytesExt};
+use byteorder::WriteBytesExt;
 use std::cmp;
 use ordered_float::OrderedFloat;
 use crate::map::shader::MapMaterial;
@@ -131,7 +131,8 @@ fn clamp(a: i32, max: u32) -> u32 {
 }
 
 const Y_SCALE: f32 = 0.2;
-const XZ_SCALE: f32 = 1.0 / 8.0;
+const XYZ_SCALE: f32 = 1.0 / 8.0;
+pub const LIGHT_POS: [f32; 3] = [-1.0, 0.2, -0.3];
 
 impl HeightMap {
     fn sample_height_water(&self, x: i32, y: i32) -> (u16, bool) {
@@ -143,8 +144,13 @@ impl HeightMap {
         }
     }
 
+    fn sample_water(&self, x: i32, y: i32) -> bool {
+        let px = self.0.get(clamp(x, self.0.width as u32), clamp(y, self.0.height as u32));
+        px.is_water
+    }
+
     fn sample_vec3(&self, x: i32, y: i32, height_factor: f32) -> Vec3 {
-        Vec3::new(x as f32, self.sample_height_water(x, y).0 as f32 * height_factor * Y_SCALE * XZ_SCALE, y as f32)
+        Vec3::new(x as f32, self.sample_height_water(x, y).0 as f32 * height_factor * Y_SCALE * XYZ_SCALE, y as f32)
     }
 
     fn sample_normal(&self, x: i32, y: i32, height_factor: f32) -> Vec3 {
@@ -159,11 +165,12 @@ impl HeightMap {
 impl Into<(Texture, u16)> for &HeightMap {
     fn into(self) -> (Texture, u16) {
         const HEIGHT_BITS: u8 = 8;
-        const LIGHT_BITS: u8 = 15 - HEIGHT_BITS;
+        const LIGHT_BITS: u8 = 8;
         const MAX_LIGHT_LEVEL: u8 = ((1u16 << LIGHT_BITS) - 1) as u8;
         const AMBIENT_LIGHT_STRENGTH: OrderedFloat<f32> = OrderedFloat(0.1);
 
-        let light_pos = Vec3::new(-1.0, 0.2, -0.3).normalize();
+        let light_pos: Vec3 = LIGHT_POS.into();
+        let light_pos = light_pos.normalize();
 
         let mut max = 0;
         for (y, x) in (0..self.0.height).cartesian_product(0..self.0.width) {
@@ -183,18 +190,41 @@ impl Into<(Texture, u16)> for &HeightMap {
             let diffuse = cmp::max(OrderedFloat(normal.dot(light_pos)), OrderedFloat(0.0));
             let brightness = cmp::min(OrderedFloat(1.0), diffuse + AMBIENT_LIGHT_STRENGTH);
 
-            let brightness_level = (brightness.0 as f32 * MAX_LIGHT_LEVEL as f32).round() as u16;
+            let brightness_level = (brightness.0 as f32 * MAX_LIGHT_LEVEL as f32).round() as u8;
             let (height, water) = self.sample_height_water(x, y);
-            let height = (height as f32 * factor).round() as u16;
+            let height = (height as f32 * factor).round() as u8;
 
-            let packed = brightness_level | (height << LIGHT_BITS) | ((water as u16) << 15);
-            bytes.write_u16::<NativeEndian>(packed).unwrap();
+            let terrain_type = if !water {
+                // TODO do better
+                let adjacent_water = self.sample_water(x + 1, y) ||
+                    self.sample_water(x - 1, y) ||
+                    self.sample_water(x, y + 1) ||
+                    self.sample_water(x, y - 1) ||
+                    self.sample_water(x + 1, y + 1) ||
+                    self.sample_water(x + 1, y - 1) ||
+                    self.sample_water(x - 1, y + 1) ||
+                    self.sample_water(x - 1, y - 1);
+
+                if adjacent_water {
+                    2
+                } else {
+                    0
+                }
+            } else {
+                1
+            };
+
+
+            bytes.write_u8(height).unwrap(); // R channel = height
+            bytes.write_u8(brightness_level).unwrap(); // G channel = brightness level
+            bytes.write_u8(terrain_type).unwrap(); // B channel = terrain type
+            bytes.write_u8(0).unwrap(); // A channel is unused
         }
 
         let texture = Texture {
             data: bytes,
             size: Extent3d::new(self.0.width as u32, self.0.height as u32, 1),
-            format: TextureFormat::R16Uint,
+            format: TextureFormat::Rgba8Uint,
             dimension: TextureDimension::D2,
             sampler: SamplerDescriptor {
                 address_mode_u: AddressMode::Repeat,
@@ -233,3 +263,52 @@ impl HeightmapMipMap {
         }
     }
 }
+
+const ZOOM: u8 = 3;
+const THREE_POW_ZOOM: f32 = 3.0 * 3.0 * 3.0;
+
+pub const TOP_LEFT_TILE: TileCoord = TileCoord { x: 23.0, y: 3.0 };
+pub const TOP_LEFT_LAT_LONG: LatLong = LatLong { latitude: 70.0, longitude: -26.6666 };
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct LatLong {
+    pub latitude: f32,
+    pub longitude: f32,
+}
+
+impl LatLong {
+    pub fn to_tile_coord(self) -> TileCoord {
+        TileCoord {
+            x: (self.longitude + 180.0) / 360.0 * 2.0 * THREE_POW_ZOOM,
+            y: (90.0 - self.latitude) / 180.0 * THREE_POW_ZOOM,
+        }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct TileCoord {
+   pub x: f32,
+   pub y: f32,
+}
+
+impl TileCoord {
+    pub fn to_lat_long(self) -> LatLong {
+        LatLong {
+            latitude: 90.0 - ((180.0 * self.y) / THREE_POW_ZOOM),
+            longitude: ((180.0 * self.x) / THREE_POW_ZOOM) - 180.0,
+        }
+    }
+
+    pub fn to_world_space(self) -> Vec2 {
+        Vec2 {
+            x: (self.x - TOP_LEFT_TILE.x) * 1000.0 * XYZ_SCALE,
+            y: (self.y - TOP_LEFT_TILE.y) * 1000.0 * XYZ_SCALE,
+        }
+    }
+
+    pub fn to_world_space_0y(self) -> Vec3 {
+        let v2 = self.to_world_space();
+        Vec3::new(v2.x, 0.0, v2.y)
+    }
+}
+
